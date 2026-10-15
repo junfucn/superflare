@@ -61,3 +61,21 @@ fnapp/superflare/etc/
 fnapp/superflare/var/
 
 RELEASE_*
+
+# Local build output and exported packages
+/superflare
+/tools/docker/superflare-*.tar
+/tools/docker/superflare-*.tar.gz
+/tools/superflare-icon.zip
+
+# Local caches, logs, and profiling output
+/.cache/
+/coverage/
+*.log
+*.tmp
+*.prof
+
+# AI working files and generated plans
+/.codex/
+/.claude/
+/docs/superpowers/
