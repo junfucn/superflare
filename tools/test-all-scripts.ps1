@@ -214,14 +214,37 @@ function Test-JsonAndTextFixtures {
     Write-Host "JSON/text fixture checks passed: $($jsonFiles.Count)"
 }
 
-function Test-FnappLifecycleConfigPreservation {
-    $testScript = Join-Path $repoRoot "fnapp/test-lifecycle-config-preservation.ps1"
-    Assert-True -Condition (Test-Path $testScript -PathType Leaf) -Message "Missing fnapp lifecycle configuration preservation test: $testScript"
+function Test-PowerShellRegressionScripts {
+    $scripts = @(
+        "tools/test-script-safety.ps1",
+        "fnapp/test-common-script.ps1",
+        "fnapp/test-config-init.ps1",
+        "fnapp/test-config-callback.ps1",
+        "fnapp/test-lifecycle-config-preservation.ps1"
+    )
+    foreach ($relative in $scripts) {
+        $testScript = Join-Path $repoRoot $relative
+        Assert-True -Condition (Test-Path $testScript -PathType Leaf) -Message "Missing PowerShell regression test: $relative"
 
-    Write-Host "Testing fnapp lifecycle configuration preservation..."
-    & $testScript
-    if (-not $?) {
-        throw "fnapp lifecycle configuration preservation test failed."
+        Write-Host "Running regression test: $relative"
+        & $testScript
+        if (-not $?) {
+            throw "PowerShell regression test failed: $relative"
+        }
+    }
+}
+
+function Test-SiteIconScript {
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) {
+        throw "Node.js was not found. Install Node.js to run the site icon script tests."
+    }
+    $testScript = Join-Path $repoRoot "tools/test-site-icons.cjs"
+    Assert-True -Condition (Test-Path $testScript -PathType Leaf) -Message "Missing site icon script test: $testScript"
+
+    & $node.Source --test $testScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "Site icon script tests failed with exit code $LASTEXITCODE."
     }
 }
 
@@ -233,5 +256,6 @@ Test-CmdWrappers
 Test-DockerComposeFiles
 Test-WindowsRuntimeCompatibility
 Test-JsonAndTextFixtures
-Test-FnappLifecycleConfigPreservation
+Test-PowerShellRegressionScripts
+Test-SiteIconScript
 Write-Host "All script checks passed."

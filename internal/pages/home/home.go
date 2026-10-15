@@ -486,7 +486,7 @@ func resolveHomeAssets(options model.Application) (background.Assets, error) {
 		return background.Assets{}, nil
 	}
 	if strings.EqualFold(strings.TrimSpace(options.BackgroundImageMode), "upload") || strings.HasPrefix(source, "/user-assets/") {
-		if _, _, err := background.FetchUploadedVariant("full"); err != nil {
+		if err := background.CheckUploadedBackground(); err != nil {
 			return background.Assets{}, fmt.Errorf("resolve uploaded background asset failed: %w", err)
 		}
 	}
@@ -659,7 +659,7 @@ func pageBookmark(c *echo.Context) error {
 		renderWarnings = append(renderWarnings, styleWarning)
 	}
 	canViewPrivate := canViewPrivateItems(c)
-	bookmarkModules, err := generateBookmarkModulesWithLocalAndURLErr("", &options, fn.RequestLooksLocalNetwork(c.Request()), &requestURL, canViewPrivate)
+	bookmarkModules, err := generateBookmarkModules("", &options, fn.RequestLooksLocalNetwork(c.Request()), &requestURL, canViewPrivate, options.ShowBookmarks, false)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
@@ -736,9 +736,12 @@ func pageApplication(c *echo.Context) error {
 		renderWarnings = append(renderWarnings, styleWarning)
 	}
 	canViewPrivate := canViewPrivateItems(c)
-	applications, err := generateApplicationProjectionWithLocalAndURLErr("", &options, fn.RequestLooksLocalNetwork(c.Request()), &requestURL, canViewPrivate)
-	if err != nil {
-		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
+	var applications applicationProjection
+	if options.ShowApps {
+		applications, err = generateApplicationProjectionWithLocalAndURLErr("", &options, fn.RequestLooksLocalNetwork(c.Request()), &requestURL, canViewPrivate)
+		if err != nil {
+			return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
+		}
 	}
 	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, options.ShowApps, applications.items, false, nil, renderWarnings)
 	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || (options.ShowApps && applications.HasDirectories))
@@ -816,11 +819,14 @@ func render(c *echo.Context, filter string) error {
 	}
 	preferLocal := fn.RequestLooksLocalNetwork(c.Request())
 	canViewPrivate := canViewPrivateItems(c)
-	applications, err := generateApplicationProjectionWithLocalAndURLErr(filter, &options, preferLocal, &requestURL, canViewPrivate)
-	if err != nil {
-		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
+	var applications applicationProjection
+	if options.ShowApps {
+		applications, err = generateApplicationProjectionWithLocalAndURLErr(filter, &options, preferLocal, &requestURL, canViewPrivate)
+		if err != nil {
+			return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
+		}
 	}
-	bookmarkModules, err := generateBookmarkModulesWithLocalAndURLErr(filter, &options, preferLocal, &requestURL, canViewPrivate)
+	bookmarkModules, err := generateBookmarkModules(filter, &options, preferLocal, &requestURL, canViewPrivate, options.ShowBookmarks, options.ShowFavorites)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}

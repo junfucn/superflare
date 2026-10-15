@@ -63,9 +63,9 @@ func TestConfigPathReturnsErrorWhenGetwdFails(t *testing.T) {
 }
 
 func TestSaveAndReadFile(t *testing.T) {
-
-	workDir, _ := os.Getwd()
-	filePath := filepath.Join(workDir, "test.yml")
+	dir := t.TempDir()
+	t.Chdir(dir)
+	filePath := filepath.Join(dir, "test.yml")
 	content := []byte("test")
 
 	if err := saveFile(filePath, content); err != nil {
@@ -81,12 +81,11 @@ func TestSaveAndReadFile(t *testing.T) {
 	if res != 0 {
 		t.Fatal("read file failed")
 	}
-
-	os.Remove(filePath)
 }
 
 func TestSaveFileAtomicallyReplacesExistingFile(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
 	filePath := filepath.Join(dir, "test.yml")
 	if err := os.WriteFile(filePath, []byte("old"), 0644); err != nil {
 		t.Fatalf("seed file failed: %v", err)
@@ -115,6 +114,7 @@ func TestSaveFileAtomicallyReplacesExistingFile(t *testing.T) {
 
 func TestSaveFilesAtomicallyRollsBackWhenLaterReplaceFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
 	firstPath := filepath.Join(dir, "first.yml")
 	secondPath := filepath.Join(dir, "second.yml")
 
@@ -164,6 +164,7 @@ func TestSaveFilesAtomicallyRollsBackWhenLaterReplaceFails(t *testing.T) {
 
 func TestSaveFilesAtomicallyRejectsDirectoryTarget(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
 	targetDir := filepath.Join(dir, "ports.yaml")
 	if err := os.Mkdir(targetDir, 0755); err != nil {
 		t.Fatalf("mkdir target dir failed: %v", err)

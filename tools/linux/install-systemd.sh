@@ -71,7 +71,7 @@ if [ ! -x "$REPO_ROOT/superflare" ]; then
 fi
 
 mkdir -p "$TARGET_DIR"
-mkdir -p "$TARGET_DIR/var/run" "$TARGET_DIR/var/cache" "$TARGET_DIR/var/uploads" "$TARGET_DIR/var/tools" "$TARGET_DIR/var/lighthouse" "$TARGET_DIR/var/screens"
+mkdir -p "$TARGET_DIR/var/run" "$TARGET_DIR/var/cache" "$TARGET_DIR/var/uploads"
 ENV_FILE="$TARGET_DIR/.env"
 
 cp "$REPO_ROOT/superflare" "$TARGET_DIR/superflare"

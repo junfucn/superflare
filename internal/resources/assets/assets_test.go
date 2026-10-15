@@ -189,7 +189,7 @@ func TestSiteIconProxyLimitsConcurrentUniqueSourceFetches(t *testing.T) {
 	define.AppFlags.DebugMode = true
 
 	const (
-		maxConcurrentFetches = 32
+		maxConcurrentFetches = 64
 		requestCount         = maxConcurrentFetches + 1
 	)
 

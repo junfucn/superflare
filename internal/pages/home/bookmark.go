@@ -39,6 +39,13 @@ func GenerateBookmarkTemplateWithLocalAndURLErr(filter string, options *model.Ap
 }
 
 func generateBookmarkModulesWithLocalAndURLErr(filter string, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL, canViewPrivate bool) (bookmarkModules, error) {
+	return generateBookmarkModules(filter, options, preferLocal, requestURL, canViewPrivate, true, true)
+}
+
+func generateBookmarkModules(filter string, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL, canViewPrivate bool, showBookmarks bool, showFavorites bool) (bookmarkModules, error) {
+	if !showBookmarks && !showFavorites {
+		return bookmarkModules{}, nil
+	}
 	if options == nil {
 		options = &model.Application{}
 	}
@@ -78,16 +85,18 @@ func generateBookmarkModulesWithLocalAndURLErr(filter string, options *model.App
 			favoritesHaveDescriptions = favoritesHaveDescriptions || hasDescription
 		}
 	}
-	sort.SliceStable(favorites, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(favorites[i].Name))
-		right := strings.ToLower(strings.TrimSpace(favorites[j].Name))
-		if left != right {
-			return left < right
-		}
-		return favorites[i].Name < favorites[j].Name
-	})
+	if showFavorites {
+		sort.SliceStable(favorites, func(i, j int) bool {
+			left := strings.ToLower(strings.TrimSpace(favorites[i].Name))
+			right := strings.ToLower(strings.TrimSpace(favorites[j].Name))
+			if left != right {
+				return left < right
+			}
+			return favorites[i].Name < favorites[j].Name
+		})
+	}
 
-	if len(bookmarksData.Categories) > 0 {
+	if showBookmarks && len(bookmarksData.Categories) > 0 {
 		b.WriteString(`<div class="bookmark-groups">`)
 		for _, category := range bookmarksData.Categories {
 			categoryCopy := category
@@ -95,14 +104,14 @@ func generateBookmarkModulesWithLocalAndURLErr(filter string, options *model.App
 		}
 		renderUngroupedBookmarks(b, &bookmarks, bookmarksData.Categories, options.Locale, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		b.WriteString(`</div>`)
-	} else {
+	} else if showBookmarks {
 		b.WriteString(`<div class="bookmark-groups">`)
 		renderBookmarksWithoutCategories(b, &bookmarks, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		b.WriteString(`</div>`)
 	}
 
 	var favoritesHTML template.HTML
-	if len(favorites) > 0 {
+	if showFavorites && len(favorites) > 0 {
 		var favoritesBuilder strings.Builder
 		favoritesBuilder.WriteString(`<div class="bookmark-groups">`)
 		renderBookmarksWithoutCategories(&favoritesBuilder, &favorites, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)

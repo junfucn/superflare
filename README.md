@@ -102,6 +102,8 @@ links:
 
 可为项目配置图标 URL 或内置 MDI 图标名；未配置时，SuperFlare 会尝试使用站点 favicon。图标请求、公开链接检查和页面访问都依赖当前网络条件及目标站点响应，无法保证外部资源始终可用。favicon 获取失败、缓存无效或浏览器加载错误时，界面会使用内置图标回退，避免导航项失去可识别的图标。
 
+站点图标下载优先使用 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量，并遵守 `NO_PROXY`。Windows 下未配置对应环境变量时，会使用当前用户启用的系统手动代理及其绕过规则；内网 IP 保持直连。Linux、Docker 和 fnOS 可通过环境变量配置代理。
+
 ## 开发与校验
 
 修改嵌入的静态资源或模板后，先生成资源，再运行测试和构建：
@@ -112,7 +114,7 @@ go test ./... -count=1
 go build ./...
 ```
 
-Windows 可额外执行仓库脚本校验：
+Windows 可额外执行仓库脚本校验，需要 Git Bash 和 Node.js，包含 fnOS 回归、脚本安全及站点图标 JavaScript 测试：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\test-all-scripts.ps1

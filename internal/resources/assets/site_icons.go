@@ -3,17 +3,22 @@ package assets
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v5"
 
 	"github.com/junfuchang/superflare/internal/fn"
 )
 
-const siteIconStreamMaxSources = 128
+const (
+	siteIconStreamMaxSources = 128
+	siteIconStreamTimeout    = fn.SiteFaviconFetchTimeout + 5*time.Second
+)
 
 type siteIconStreamResult struct {
 	Source      string `json:"source"`
@@ -46,7 +51,12 @@ func serveSiteFaviconStream(c *echo.Context) error {
 		sources[source] = struct{}{}
 	}
 
-	ctx, cancel := context.WithCancel(c.Request().Context())
+	// The stream needs time to emit the last result after a favicon times out.
+	controller := http.NewResponseController(c.Response())
+	if err := controller.SetWriteDeadline(time.Now().Add(siteIconStreamTimeout + time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(c.Request().Context(), siteIconStreamTimeout)
 	defer cancel()
 	results := make(chan siteIconStreamResult)
 	for source := range sources {
@@ -70,7 +80,6 @@ func serveSiteFaviconStream(c *echo.Context) error {
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(response)
-	controller := http.NewResponseController(response)
 	for range sources {
 		select {
 		case result := <-results:

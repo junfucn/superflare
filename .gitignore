@@ -12,25 +12,14 @@
 *.out
 coverage.html
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-
-database
-internal/assets/icons
-internal/assets/favicon.ico
-internal/assets/css
-internal/templates/html/*
-internal/mdi/mdi-cheat-sheets
+# Generated editor and guide assets
 internal/pages/guide/guide-assets/*
 !internal/pages/guide/guide-assets/placeholder.txt
 internal/pages/editor/editor-assets/*
 !internal/pages/editor/editor-assets/placeholder.txt
-internal/weather/icons
 .DS_Store
 tmp
 tmp-fnapp-unpack/
-.benchmark
 apps.yml
 bookmarks.yml
 config.yml

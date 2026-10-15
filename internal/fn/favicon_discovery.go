@@ -38,7 +38,7 @@ func discoverSiteFaviconFromHTML(ctx context.Context, rootIconURL string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; SuperFlare favicon fetcher)")
+	req.Header.Set("User-Agent", siteIconUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	resp, err := siteIconHTTPClient.Do(req)
 	if err != nil {
@@ -59,7 +59,9 @@ func discoverSiteFaviconFromHTML(ctx context.Context, rootIconURL string) ([]str
 	}
 	iconBase := pageURL
 	if resolved := resolveDiscoveredSiteFavicon(pageURL, metadata.baseHref); resolved != "" {
-		iconBase, _ = url.Parse(resolved)
+		if candidate, err := url.Parse(resolved); err == nil && (candidate.Scheme == "http" || candidate.Scheme == "https") {
+			iconBase = candidate
+		}
 	}
 	var candidates []string
 	seen := make(map[string]bool)
@@ -94,6 +96,10 @@ func resolveDiscoveredSiteFavicon(base *url.URL, href string) string {
 	if err != nil {
 		return ""
 	}
+	if ref.Scheme == "data" {
+		ref.Fragment = ""
+		return ref.String()
+	}
 	resolved := base.ResolveReference(ref)
 	if (resolved.Scheme != "http" && resolved.Scheme != "https") || !isProxyableSiteFaviconURL(resolved.String()) {
 		return ""
@@ -110,7 +116,7 @@ func discoverSPASiteFavicon(ctx context.Context, pageURL *url.URL) (string, erro
 		return "", err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; SuperFlare favicon fetcher)")
+	req.Header.Set("User-Agent", siteIconUserAgent)
 	resp, err := siteIconHTTPClient.Do(req)
 	if err != nil {
 		return "", err
@@ -121,7 +127,7 @@ func discoverSPASiteFavicon(ctx context.Context, pageURL *url.URL) (string, erro
 	}
 	var config struct {
 		Data struct {
-			Brand struct {
+			Brand *struct {
 				SiteIcon string `json:"site_icon"`
 			} `json:"brand"`
 		} `json:"data"`
@@ -129,7 +135,15 @@ func discoverSPASiteFavicon(ctx context.Context, pageURL *url.URL) (string, erro
 	if err := json.NewDecoder(io.LimitReader(resp.Body, siteIconHTMLBytes)).Decode(&config); err != nil {
 		return "", fmt.Errorf("decode public site config: %w", err)
 	}
-	iconURL := resolveDiscoveredSiteFavicon(pageURL, config.Data.Brand.SiteIcon)
+	if config.Data.Brand == nil {
+		return "", fmt.Errorf("no public config brand found")
+	}
+	href := strings.TrimSpace(config.Data.Brand.SiteIcon)
+	if href == "" {
+		// Match Dujiao-Next's frontend fallback when no custom icon is set.
+		href = "/dj.svg"
+	}
+	iconURL := resolveDiscoveredSiteFavicon(pageURL, href)
 	if iconURL == "" {
 		return "", fmt.Errorf("no public config favicon found")
 	}

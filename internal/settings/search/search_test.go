@@ -59,6 +59,7 @@ func TestUpdateSearchOptionsReturnsServerErrorWhenSaveFails(t *testing.T) {
 }
 
 func TestUpdateSearchOptionsReturnsStyledBadRequestWhenCustomEngineTemplateInvalid(t *testing.T) {
+	t.Chdir(t.TempDir())
 	form := url.Values{}
 	form.Set("show-search-component", "true")
 	form.Set("search-mode", "engine")
@@ -84,6 +85,7 @@ func TestUpdateSearchOptionsReturnsStyledBadRequestWhenCustomEngineTemplateInval
 }
 
 func TestUpdateSearchOptionsReturnsStyledBadRequestWhenFormDataMissing(t *testing.T) {
+	t.Chdir(t.TempDir())
 	req := httptest.NewRequest(http.MethodPost, "/settings/search", strings.NewReader("{"))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()

@@ -1374,6 +1374,74 @@ func TestPrivateHandlersLoadEachVisibleSourceOnce(t *testing.T) {
 	}
 }
 
+func TestHiddenHandlersSkipDisabledSources(t *testing.T) {
+	originalRuntime := auth.SnapshotAuthRuntimeConfig()
+	t.Cleanup(func() { auth.StoreAuthRuntimeConfig(originalRuntime) })
+	tests := []struct {
+		name          string
+		handler       echo.HandlerFunc
+		showApps      bool
+		showBookmarks bool
+		showFavorites bool
+		appLoads      int
+		bookmarkLoads int
+	}{
+		{name: "home all hidden", handler: pageHome},
+		{name: "home apps only", handler: pageHome, showApps: true, appLoads: 1},
+		{name: "home favorites only", handler: pageHome, showFavorites: true, bookmarkLoads: 1},
+		{name: "home bookmarks only", handler: pageHome, showBookmarks: true, bookmarkLoads: 1},
+		{name: "applications hidden", handler: pageApplication},
+		{name: "bookmarks hidden despite favorites enabled", handler: pageBookmark, showFavorites: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usePrivateProjectionFixtures(t)
+			config := fmt.Sprintf("Title: SuperFlare\nLocale: en\nTheme: blackboard\nIconMode: NONE\nShowApps: %t\nShowBookmarks: %t\nShowFavorites: %t\n", tt.showApps, tt.showBookmarks, tt.showFavorites)
+			if err := os.WriteFile("config.yml", []byte(config), 0644); err != nil {
+				t.Fatal(err)
+			}
+			originalApps, originalBookmarks := loadFavoriteBookmarks, loadNormalBookmarks
+			t.Cleanup(func() { loadFavoriteBookmarks, loadNormalBookmarks = originalApps, originalBookmarks })
+			appLoads, bookmarkLoads := 0, 0
+			loadFavoriteBookmarks = func() (model.Bookmarks, error) {
+				appLoads++
+				if tt.appLoads == 0 {
+					return model.Bookmarks{}, errors.New("disabled apps must not be read")
+				}
+				return model.Bookmarks{Items: []model.Bookmark{{Name: "Injected App", URL: "https://app.example"}}}, nil
+			}
+			loadNormalBookmarks = func() (model.Bookmarks, error) {
+				bookmarkLoads++
+				if tt.bookmarkLoads == 0 {
+					return model.Bookmarks{}, errors.New("disabled bookmarks must not be read")
+				}
+				return model.Bookmarks{Items: []model.Bookmark{{Name: "Injected Bookmark", URL: "https://bookmark.example", Favorite: true}}}, nil
+			}
+			e := echo.New()
+			e.Renderer = sourceLoadRenderer{t: t, checkApps: tt.showApps, checkBookmarks: tt.showBookmarks}
+			auth.RequestHandleWithFlags(e, model.Flags{DisableLoginMode: true, CookieName: "hidden-sources", Port: 3636})
+			e.GET("/", tt.handler)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rec.Code != http.StatusOK || appLoads != tt.appLoads || bookmarkLoads != tt.bookmarkLoads {
+				t.Fatalf("status=%d loads=apps:%d bookmarks:%d, want apps:%d bookmarks:%d; %s", rec.Code, appLoads, bookmarkLoads, tt.appLoads, tt.bookmarkLoads, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestBookmarkModulesGenerateOnlyEnabledSections(t *testing.T) {
+	usePrivateProjectionFixtures(t)
+	options := model.Application{ShowFavorites: true, IconMode: define.IconModeHidden}
+	modules, err := generateBookmarkModules("", &options, false, nil, false, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modules.Bookmarks != "" || modules.Favorites == "" || strings.Contains(string(modules.Favorites), "alpha") {
+		t.Fatalf("favorites-only projection must skip regular HTML and filter private bookmarks: %+v", modules)
+	}
+}
+
 func TestSetCSPHeader_WhenDisableCSPFalse_SetsHeader(t *testing.T) {
 	orig := saveAppFlags()
 	origRuntime, origRuntimeSet := saveHomeRuntimeFlags()
@@ -1476,13 +1544,30 @@ func TestInlineSiteIconRefreshScriptDeduplicatesSourcesWithoutPolling(t *testing
 			t.Fatalf("favicon refresh script should contain %q: %s", expected, script)
 		}
 	}
-	if got := strings.Count(script, `fetch(src,{cache:"reload"})`); got != 1 {
+	if got := strings.Count(script, `fetch(src,{cache:"reload",signal:`); got != 1 {
 		t.Fatalf("favicon refresh script should contain one grouped reload fetch call, got %d: %s", got, script)
 	}
-	for _, unexpected := range []string{`fetch(src)`, `setTimeout`, `var left=`, `cache:"no-store"`} {
+	for _, unexpected := range []string{`fetch(src)`, `setInterval`, `var left=`, `cache:"no-store"`} {
 		if strings.Contains(script, unexpected) {
 			t.Fatalf("favicon refresh script should not contain %q: %s", unexpected, script)
 		}
+	}
+}
+
+func TestInlineSiteIconRefreshScriptStartsAfterPageLoad(t *testing.T) {
+	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
+	for _, expected := range []string{
+		"function refreshSiteIcons(){",
+		`function scheduleRefresh(){window.setTimeout(refreshSiteIcons,0);}`,
+		`if(document.readyState==="complete"){scheduleRefresh();}else{window.addEventListener("load",scheduleRefresh,{once:true});}`,
+		`img.loading="lazy";img.decoding="async";img.src=objectUrl;`,
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("favicon refresh must stay outside the initial page load, missing %q", expected)
+		}
+	}
+	if got := strings.Count(script, "setTimeout"); got != 1 {
+		t.Fatalf("favicon refresh should use one deferred start without polling, got %d timers", got)
 	}
 }
 
@@ -1502,21 +1587,43 @@ func TestInlineSiteIconRefreshScriptDecodesBlobBeforeReplacingFallback(t *testin
 func TestInlineSiteIconRefreshScriptStreamsEachCompletedIcon(t *testing.T) {
 	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
 	for _, expected := range []string{
-		`fetch("/assets/site-icons/stream"`,
+		`function applyRecord(line)`,
+		`return fetch("/assets/site-icons/stream"`,
 		`var chunk=await reader.read()`,
 		`lines.forEach(applyRecord)`,
 		`pending.delete(record.source)`,
-		`pending.delete(record.source);loadDirect(item.group,item.src);return;`,
+		`pending.delete(record.source);recovery.push(loadDirect(item.group,item.src));return;`,
 		`displayIcon(item.group,item.src,new Blob(`,
 		`streaming.slice(offset,offset+128)`,
-		`pending.forEach(function(item){loadDirect(item.group,item.src);})`,
+		`pending.forEach(function(item){recovery.push(loadDirect(item.group,item.src));})`,
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("favicon script is missing incremental streaming behavior %q", expected)
 		}
 	}
-	if strings.Contains(script, "Promise.all") {
-		t.Fatal("favicon display must not wait for all sources to finish")
+	recordStart := strings.Index(script, "function applyRecord(line)")
+	recordEnd := strings.Index(script[recordStart:], `return fetch("/assets/site-icons/stream"`) + recordStart
+	if strings.Contains(script[recordStart:recordEnd], "Promise.all") {
+		t.Fatal("each streamed icon must be displayed without waiting for other sources")
+	}
+}
+
+func TestInlineSiteIconRefreshScriptLoadsOnlyVisibleIcons(t *testing.T) {
+	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
+	for _, expected := range []string{
+		`new window.IntersectionObserver`,
+		`node.closest("details:not([open])")`,
+		`window.location.hash==="#"+modal.id`,
+		`waiting.delete(src);ready.set(src,group);`,
+		`document.addEventListener("toggle",scheduleScan,true)`,
+		`window.addEventListener("hashchange",scheduleScan)`,
+		`requestController.abort()`,
+		`return Promise.all(requests);`,
+		`return Promise.all(recovery);`,
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("favicon script is missing on-demand loading behavior %q", expected)
+		}
 	}
 }
 
@@ -1551,7 +1658,7 @@ func TestInlineSiteIconRefreshScriptRepairsLegacyDirectBrowserCacheOncePerSource
 	if strings.Contains(script, `superflare.site-icon.verified-hosted:`) {
 		t.Fatalf("favicon refresh script should not retain the verified-hosted repair generation: %s", script)
 	}
-	if got := strings.Count(script, `fetch(src,{cache:"reload"})`); got != 1 {
+	if got := strings.Count(script, `fetch(src,{cache:"reload",signal:`); got != 1 {
 		t.Fatalf("direct and asynchronous repairs should share one grouped reload fetch, got %d: %s", got, script)
 	}
 }
@@ -2235,7 +2342,7 @@ func TestPageApplicationReturnsStyledErrorPageWhenAppsBroken(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origWd) }()
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.yml"), []byte("Title: SuperFlare\nLocale: zh\nTheme: blackboard\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.yml"), []byte("Title: SuperFlare\nLocale: zh\nTheme: blackboard\nShowApps: true\n"), 0644); err != nil {
 		t.Fatalf("write config.yml: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "apps.yml"), []byte("links: [broken\n"), 0644); err != nil {
@@ -2714,40 +2821,6 @@ func TestPageSearchRedirectsToCustomEngineWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestRenderUsesEngineSearchHintsWhenModeIsEngine(t *testing.T) {
-	t.Skip("legacy encoded-body assertion replaced by renderer-based coverage")
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("chdir temp dir: %v", err)
-	}
-	defer func() { _ = os.Chdir(origWd) }()
-
-	configBody := "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSearchMode: engine\nSearchEngine: google\n"
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.yml"), []byte(configBody), 0644); err != nil {
-		t.Fatalf("write config.yml: %v", err)
-	}
-
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	if err := render(c, ""); err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "使用 Google 搜索") {
-		t.Fatalf("expected engine search placeholder in body, got %s", body)
-	}
-	if !strings.Contains(body, "输入关键词后将跳转到 Google 搜索") {
-		t.Fatalf("expected engine search hint label in body, got %s", body)
-	}
-}
-
 func TestPageSearchReturnsStyledErrorWhenConfigBroken(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
@@ -2980,10 +3053,6 @@ type homeWarningsToolbarRenderer struct {
 	expectHidden   bool
 }
 
-type homeSearchHintRenderer struct {
-	t *testing.T
-}
-
 type homeSearchHintRendererI18n struct {
 	t *testing.T
 }
@@ -3060,27 +3129,6 @@ func (r homeWarningsToolbarRenderer) Render(c *echo.Context, w io.Writer, name s
 	}
 	if !r.expectWarnings && len(warnings) != 0 {
 		r.t.Fatalf("expected no warnings, got %#v", warnings)
-	}
-	return nil
-}
-
-func (r homeSearchHintRenderer) Render(c *echo.Context, w io.Writer, name string, data any) error {
-	r.t.Helper()
-	m, ok := data.(map[string]any)
-	if !ok {
-		if typed, ok := data.(map[string]interface{}); ok {
-			m = typed
-		} else {
-			r.t.Fatalf("unexpected template data type %T", data)
-		}
-	}
-	placeholder, _ := m["SearchKeyword"].(template.HTML)
-	label, _ := m["SearchHintLabel"].(string)
-	if string(placeholder) != "使用 Google 搜索" {
-		r.t.Fatalf("expected Google search placeholder, got %q", string(placeholder))
-	}
-	if label != "输入关键词后将跳转到 Google 搜索" {
-		r.t.Fatalf("expected Google search label, got %q", label)
 	}
 	return nil
 }

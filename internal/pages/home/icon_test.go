@@ -56,6 +56,9 @@ func TestRenderBookmarkIcon_CacheMissMarksFallbackForAsyncSiteFavicon(t *testing
 	if !strings.Contains(out, `data-site-icon-src="/assets/site-icons?src=https%3A%2F%2Fexample.com%2Ffavicon.ico"`) {
 		t.Fatalf("cache miss fallback should be marked for async favicon refresh, got %q", out)
 	}
+	if !strings.Contains(out, `loading="lazy"`) {
+		t.Fatalf("cache miss fallback should not block page load, got %q", out)
+	}
 }
 
 func TestRenderBookmarkIcon_MinimumRequestCacheMissMarksInlineFallbackForAsyncSiteFavicon(t *testing.T) {
@@ -113,10 +116,9 @@ func TestRenderBookmarkIcon_CacheHitRendersDirectlyWithoutAsyncFallback(t *testi
 	if strings.Contains(out, `data-site-icon-src=`) {
 		t.Fatalf("cached favicon should not use the asynchronous fallback path, got %q", out)
 	}
-	if !strings.Contains(out, `decoding="sync"`) || strings.Contains(out, `decoding="async"`) {
-		t.Fatalf("cached favicon should decode synchronously before the first paint, got %q", out)
-	}
 	for _, expected := range []string{
+		`loading="lazy"`,
+		`decoding="async"`,
 		`data-site-icon-direct="1"`,
 		`data-site-icon-fallback-src="/assets/mdi/blackboard-bookmark.svg"`,
 	} {
@@ -165,6 +167,19 @@ func TestRenderBookmarkIcon_ExplicitImageWins(t *testing.T) {
 	}
 	if strings.Contains(out, "example.com/favicon.ico") {
 		t.Fatalf("explicit image icon should not be replaced by site favicon, got %q", out)
+	}
+	for _, expected := range []string{`loading="lazy"`, `decoding="async"`} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("explicit image icon should not block page load or rendering, missing %q in %q", expected, out)
+		}
+	}
+}
+
+func TestRenderBookmarkIcon_BuiltinImageDoesNotBlockPageLoad(t *testing.T) {
+	prepareIconTest(t)
+	out := renderBookmarkIcon("git", "https://example.com/path", "DEFAULT")
+	if !strings.Contains(out, `src="/assets/mdi/blackboard-git.svg"`) || !strings.Contains(out, `loading="lazy"`) {
+		t.Fatalf("builtin image icon should retain its source without blocking page load, got %q", out)
 	}
 }
 

@@ -538,6 +538,7 @@ func TestBackupDataReturnsStyledErrorWhenSourceEmpty(t *testing.T) {
 }
 
 func TestUpdateDataReturnsStyledErrorPageWhenPayloadInvalid(t *testing.T) {
+	t.Chdir(t.TempDir())
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/editor", strings.NewReader("categories=1,Links&bookmarks=broken"))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
@@ -559,6 +560,7 @@ func TestUpdateDataReturnsStyledErrorPageWhenPayloadInvalid(t *testing.T) {
 }
 
 func TestUpdateDataReturnsJSONWhenPayloadInvalidAndJSONAccepted(t *testing.T) {
+	t.Chdir(t.TempDir())
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/editor", strings.NewReader("categories=1,Links&bookmarks=broken"))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
@@ -584,6 +586,7 @@ func TestUpdateDataReturnsJSONWhenPayloadInvalidAndJSONAccepted(t *testing.T) {
 }
 
 func TestUpdateDataReturnsStyledErrorPageWhenCategoryIDsDuplicate(t *testing.T) {
+	t.Chdir(t.TempDir())
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/editor", strings.NewReader("categories=1,Links%0A1,Links2&bookmarks="))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
@@ -1815,6 +1818,7 @@ func TestWriteRestoreFilesAtomicallyFailsWhenTargetPathIsDirectory(t *testing.T)
 }
 
 func TestWriteRestoreFilesAtomicallyFailsWhenGetwdFails(t *testing.T) {
+	t.Chdir(t.TempDir())
 	originalResolve := resolveRestoreConfigPath
 	defer func() { resolveRestoreConfigPath = originalResolve }()
 

@@ -12,9 +12,7 @@ import (
 )
 
 func TestFavoriteBookmarks(t *testing.T) {
-
-	filePath := getConfigPath("apps")
-	os.Remove(filePath)
+	t.Chdir(t.TempDir())
 	if err := EnsureRuntimeDataFiles(); err != nil {
 		t.Fatalf("EnsureRuntimeDataFiles: %v", err)
 	}
@@ -29,8 +27,6 @@ func TestFavoriteBookmarks(t *testing.T) {
 	if err := SaveFavoriteBookmarks(data); err != nil {
 		t.Fatalf("Save Favorite Bookmarks Failed: %v", err)
 	}
-
-	os.Remove(filePath)
 
 }
 
@@ -70,9 +66,7 @@ func TestSaveFavoriteBookmarksUsesConfigWriteLock(t *testing.T) {
 }
 
 func TestNormalBookmarks(t *testing.T) {
-
-	filePath := getConfigPath("bookmarks")
-	os.Remove(filePath)
+	t.Chdir(t.TempDir())
 	if err := EnsureRuntimeDataFiles(); err != nil {
 		t.Fatalf("EnsureRuntimeDataFiles: %v", err)
 	}
@@ -87,8 +81,6 @@ func TestNormalBookmarks(t *testing.T) {
 	if err := SaveNormalBookmarks(data); err != nil {
 		t.Fatalf("Save Normal Bookmarks Failed: %v", err)
 	}
-
-	os.Remove(filePath)
 
 }
 
@@ -133,8 +125,8 @@ func TestLoadNormalBookmarksReturnsErrorWhenConfigMissing(t *testing.T) {
 }
 
 func TestSaveFavoriteBookmarksReturnsErrorWhenTargetIsDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
 	filePath := getConfigPath("apps")
-	_ = os.RemoveAll(filePath)
 	if err := os.Mkdir(filePath, 0755); err != nil {
 		t.Fatalf("mkdir apps target: %v", err)
 	}
@@ -143,13 +135,11 @@ func TestSaveFavoriteBookmarksReturnsErrorWhenTargetIsDirectory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected SaveFavoriteBookmarks to fail when target path is a directory")
 	}
-
-	_ = os.RemoveAll(filePath)
 }
 
 func TestSaveNormalBookmarksReturnsErrorWhenTargetIsDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
 	filePath := getConfigPath("bookmarks")
-	_ = os.RemoveAll(filePath)
 	if err := os.Mkdir(filePath, 0755); err != nil {
 		t.Fatalf("mkdir bookmarks target: %v", err)
 	}
@@ -158,8 +148,6 @@ func TestSaveNormalBookmarksReturnsErrorWhenTargetIsDirectory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected SaveNormalBookmarks to fail when target path is a directory")
 	}
-
-	_ = os.RemoveAll(filePath)
 }
 
 func TestLoadFavoriteBookmarksReturnsErrorWhenStatFails(t *testing.T) {

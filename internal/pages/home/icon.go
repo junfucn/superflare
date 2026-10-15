@@ -20,21 +20,20 @@ func renderBookmarkIcon(icon string, link string, iconMode string) string {
 	defaultBookmarkIcon := mdi.GetIconByName("bookmark")
 
 	icon = strings.TrimSpace(icon)
+	var markup string
 	if strings.HasPrefix(icon, "http://") || strings.HasPrefix(icon, "https://") {
-		return `<img src="` + template.HTMLEscapeString(icon) + `" alt="">`
-	}
-	if icon != "" {
-		if builtInIcon := mdi.GetIconByName(icon); builtInIcon != "" {
-			return builtInIcon
+		markup = `<img src="` + template.HTMLEscapeString(icon) + `" decoding="async" alt="">`
+	} else if icon != "" {
+		markup = mdi.GetIconByName(icon)
+		if markup == "" {
+			markup = iconFallbackForLink(link, defaultBookmarkIcon)
 		}
-		return iconFallbackForLink(link, defaultBookmarkIcon)
+	} else if iconMode == define.IconModeMissingFill {
+		markup = iconFallbackForLink(link, defaultBookmarkIcon)
 	}
 
-	if iconMode == define.IconModeMissingFill {
-		return iconFallbackForLink(link, defaultBookmarkIcon)
-	}
-
-	return ""
+	// Lazy images do not hold up the page load event, even inside the viewport.
+	return strings.Replace(markup, "<img ", `<img loading="lazy" `, 1)
 }
 
 func iconFallbackForLink(link string, fallback string) string {

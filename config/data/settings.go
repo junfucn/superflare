@@ -136,10 +136,10 @@ func UpdateSearch(showSearchComponent bool, disabledSearchAutoFocus bool, search
 }
 
 func GetAllSettingsOptions() (model.Application, error) {
-	options, err := loadAppConfigFromYaml("config")
-	if err != nil {
-		return options, err
-	}
+	return loadAppConfigSnapshot("config", true)
+}
+
+func normalizeSettingsOptions(options model.Application) (model.Application, error) {
 	if err := validateSettingsOptions(options); err != nil {
 		return options, err
 	}

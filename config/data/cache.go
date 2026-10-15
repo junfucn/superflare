@@ -11,6 +11,7 @@ type fileCacheEntry struct {
 	data    []byte
 	size    int64
 	modTime time.Time
+	parsed  map[string]any
 }
 
 var (
@@ -42,6 +43,46 @@ func readFileCached(filePath string, readDisk func() ([]byte, error)) ([]byte, e
 	}
 	fileCache[cacheKey] = newFileCacheEntry(raw, stat, statErr)
 	return cloneBytes(raw), nil
+}
+
+// Parsed values remain immutable in the cache; callers clone mutable fields.
+func readParsedFileCached[T any](filePath, kind string, parse func([]byte) (T, error)) (T, error) {
+	cacheKey := filepath.Clean(filePath)
+	stat, statErr := os.Stat(cacheKey)
+	fileCacheMu.RLock()
+	if cached, ok := fileCache[cacheKey]; ok && cacheEntryMatchesStat(cached, stat, statErr) {
+		if value, ok := cached.parsed[kind].(T); ok {
+			fileCacheMu.RUnlock()
+			return value, nil
+		}
+	}
+	fileCacheMu.RUnlock()
+
+	fileCacheMu.Lock()
+	defer fileCacheMu.Unlock()
+	stat, statErr = os.Stat(cacheKey)
+	cached, ok := fileCache[cacheKey]
+	if !ok || !cacheEntryMatchesStat(cached, stat, statErr) {
+		raw, err := readFile(filePath)
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		cached = newFileCacheEntry(raw, stat, statErr)
+	}
+	if value, ok := cached.parsed[kind].(T); ok {
+		return value, nil
+	}
+	value, err := parse(cached.data)
+	if err != nil {
+		return value, err
+	}
+	if cached.parsed == nil {
+		cached.parsed = make(map[string]any)
+	}
+	cached.parsed[kind] = value
+	fileCache[cacheKey] = cached
+	return value, nil
 }
 
 func invalidateFileCachePath(filePath string) {

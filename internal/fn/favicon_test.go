@@ -876,6 +876,7 @@ func TestFetchPublicSiteFaviconAcceptsLargeIconAndCachesIt(t *testing.T) {
 }
 
 func TestFetchPublicSiteFaviconAcceptsSVGWithTextPlainHeader(t *testing.T) {
+	withSiteIconTempWorkingDir(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>`))

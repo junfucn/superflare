@@ -86,44 +86,36 @@ func ResolveAssets(options model.Application) Assets {
 
 	if usesUploadedSource(source, options.BackgroundImageMode) {
 		_ = EnsureUploadedBackgroundVariants()
-		variantLoader := func() func() ([]byte, string, error) {
-			var loaded bool
-			var cachedData []byte
-			var cachedType string
-			var cachedErr error
-			return func() ([]byte, string, error) {
-				if loaded {
-					return cachedData, cachedType, cachedErr
-				}
-				cachedData, cachedType, cachedErr = FetchUploadedVariant("preview")
-				loaded = true
-				return cachedData, cachedType, cachedErr
-			}
-		}()
 		assets := Assets{
 			Enabled:    true,
 			PreviewURL: UploadedPreviewPath,
 			FullURL:    UploadedFullPath,
 		}
-		assets.PreviewDataURL = buildInlinePreviewDataURL(variantLoader)
-		assets.AccentColor = detectAccentColor(variantLoader)
+		root, err := os.Getwd()
+		if err != nil {
+			return assets
+		}
+		assets.PreviewDataURL, assets.AccentColor = resolvePreviewMetadata(filepath.Join(root, uploadDir, "background-preview"), func() ([]byte, string, error) {
+			return FetchUploadedVariant("preview")
+		})
 		return assets
 	}
 
 	if isHTTPSource(source) {
 		WarmRemoteVariants(source)
 		escaped := url.QueryEscape(source)
-		cachedData, cachedType, cachedErr := readCachedVariant(source, "preview")
-		variantLoader := func() ([]byte, string, error) {
-			return cachedData, cachedType, cachedErr
-		}
 		assets := Assets{
 			Enabled:    true,
 			PreviewURL: RemoteAssetPath + "?variant=preview&src=" + escaped,
 			FullURL:    RemoteAssetPath + "?variant=full&src=" + escaped,
 		}
-		assets.PreviewDataURL = buildInlinePreviewDataURL(variantLoader)
-		assets.AccentColor = detectAccentColor(variantLoader)
+		root, err := os.Getwd()
+		if err != nil {
+			return assets
+		}
+		assets.PreviewDataURL, assets.AccentColor = resolvePreviewMetadata(filepath.Join(root, cacheDir, remoteCacheKey(source)+"-preview"), func() ([]byte, string, error) {
+			return readCachedVariant(source, "preview")
+		})
 		return assets
 	}
 
@@ -993,7 +985,11 @@ func hasAlpha(img image.Image) bool {
 }
 
 func cacheExists(source string, variant string) bool {
-	_, _, err := readCachedVariant(source, normalizeVariant(variant))
+	root, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	_, err = statVariant(filepath.Join(root, cacheDir, remoteCacheKey(source)+"-"+normalizeVariant(variant)))
 	return err == nil
 }
 

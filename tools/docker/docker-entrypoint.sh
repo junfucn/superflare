@@ -3,10 +3,7 @@ set -eu
 
 mkdir -p \
   /data/var/uploads \
-  /data/var/cache \
-  /data/var/tools \
-  /data/var/lighthouse \
-  /data/var/screens
+  /data/var/cache
 
 cd /data
 exec /opt/superflare/superflare "$@"

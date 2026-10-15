@@ -51,6 +51,10 @@ func saveAppConfigToYamlFileWith(name string, result model.Application, save fun
 }
 
 func loadAppConfigFromYaml(name string) (model.Application, error) {
+	return loadAppConfigSnapshot(name, false)
+}
+
+func loadAppConfigSnapshot(name string, normalized bool) (model.Application, error) {
 	result := model.Application{ShowFavorites: true}
 	filePath, err := configPath(name)
 	if err != nil {
@@ -64,15 +68,19 @@ func loadAppConfigFromYaml(name string) (model.Application, error) {
 	if !exists {
 		return result, fmt.Errorf("config %s is missing", name)
 	}
-	configFile, err := readFileCached(filePath, func() ([]byte, error) { return readFile(filePath) })
-	if err != nil {
-		return result, fmt.Errorf("read config %s failed: %w", name, err)
+	kind := "application"
+	if normalized {
+		kind = "settings"
 	}
-	parseErr := yaml.Unmarshal(configFile, &result)
-	if parseErr != nil {
-		return result, fmt.Errorf("parse config %s failed: %w", name, parseErr)
-	}
-	return result, nil
+	return readParsedFileCached(filePath, kind, func(raw []byte) (model.Application, error) {
+		if err := yaml.Unmarshal(raw, &result); err != nil {
+			return result, fmt.Errorf("parse config %s failed: %w", name, err)
+		}
+		if normalized {
+			return normalizeSettingsOptions(result)
+		}
+		return result, nil
+	})
 }
 
 func LoadAppConfigFromRaw(raw []byte) (model.Application, error) {

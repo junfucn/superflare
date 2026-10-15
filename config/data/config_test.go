@@ -11,8 +11,7 @@ import (
 )
 
 func TestAppConfig(t *testing.T) {
-	filePath := getConfigPath("config")
-	os.Remove(filePath)
+	t.Chdir(t.TempDir())
 
 	if err := EnsureAppConfigExists(); err != nil {
 		t.Fatalf("EnsureAppConfigExists: %v", err)
@@ -27,8 +26,6 @@ func TestAppConfig(t *testing.T) {
 	if err := saveAppConfigToYamlFile("config", data); err != nil {
 		t.Fatalf("Save App Config Failed: %v", err)
 	}
-
-	os.Remove(filePath)
 }
 
 func TestLoadAppConfigFromYamlDefaultValues(t *testing.T) {

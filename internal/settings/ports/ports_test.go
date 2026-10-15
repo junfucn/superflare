@@ -653,37 +653,6 @@ func (testRenderer) Render(c *echo.Context, w io.Writer, name string, data any) 
 	return nil
 }
 
-type portsWarningRenderer struct {
-	t *testing.T
-}
-
-func (r portsWarningRenderer) Render(c *echo.Context, w io.Writer, name string, data any) error {
-	r.t.Helper()
-	m, ok := data.(map[string]any)
-	if !ok {
-		if typed, ok := data.(map[string]interface{}); ok {
-			m = typed
-		} else {
-			r.t.Fatalf("unexpected renderer data type %T", data)
-		}
-	}
-	warnings, ok := m["RenderWarnings"].([]string)
-	if !ok || len(warnings) == 0 {
-		r.t.Fatalf("expected render warnings, got %#v", m["RenderWarnings"])
-	}
-	found := false
-	for _, item := range warnings {
-		if strings.Contains(item, "lookup denied") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		r.t.Fatalf("expected owner resolution warning detail, got %#v", warnings)
-	}
-	return nil
-}
-
 type portsPageRenderer struct {
 	t      *testing.T
 	assert func(map[string]any)

@@ -3,6 +3,7 @@ package data
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -67,16 +68,25 @@ func loadBookmarksFromYamlFile(name string, isFavorite bool) (model.Bookmarks, e
 		return result, fmt.Errorf("bookmarks config %s is missing", name)
 	}
 
-	configFile, err := readFileCached(filePath, func() ([]byte, error) { return readFile(filePath) })
+	kind := "bookmarks"
+	if isFavorite {
+		kind = "apps"
+	}
+	result, err = readParsedFileCached(filePath, kind, func(raw []byte) (model.Bookmarks, error) {
+		var snapshot model.Bookmarks
+		if err := yaml.Unmarshal(raw, &snapshot); err != nil {
+			return snapshot, fmt.Errorf("parse bookmarks config %s failed: %w", name, err)
+		}
+		if err := validateBookmarks(snapshot, isFavorite); err != nil {
+			return snapshot, err
+		}
+		return snapshot, nil
+	})
 	if err != nil {
-		return result, fmt.Errorf("read bookmarks config %s failed: %w", name, err)
-	}
-	if err := yaml.Unmarshal(configFile, &result); err != nil {
-		return result, fmt.Errorf("parse bookmarks config %s failed: %w", name, err)
-	}
-	if err := validateBookmarks(result, isFavorite); err != nil {
 		return result, err
 	}
+	result.Categories = slices.Clone(result.Categories)
+	result.Items = slices.Clone(result.Items)
 	return result, nil
 }
 

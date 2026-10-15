@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -36,11 +38,11 @@ const (
 	siteIconMaxBytes           = 4 * 1024 * 1024
 	siteIconMaxDecodedPixels   = 4 * 1024 * 1024
 	siteIconHTMLBytes          = 512 * 1024
-	siteIconWarmLimit          = 8
-	siteIconFetchLimit         = 32
+	siteIconWarmLimit          = 16
+	siteIconFetchLimit         = 64
 	siteIconDecodeLimit        = 2
 	siteIconRequestTimeout     = 4 * time.Second
-	siteIconOverallTimeout     = 10 * time.Second
+	siteIconOverallTimeout     = SiteFaviconFetchTimeout
 	siteIconHostedTimeout      = 6 * time.Second
 	siteIconFailureTTL         = 5 * time.Minute
 	siteIconFailureMaxEntries  = 1024
@@ -49,7 +51,11 @@ const (
 	siteIconHostedSourceHeader = "X-Favicon-Source"
 	siteIconPrimaryHostedHost  = "icon.horse"
 	siteIconPrimaryHostedCache = "max-age=2592000"
+	siteIconUserAgent          = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
+
+// SiteFaviconFetchTimeout includes waiting for a download slot and all fallbacks.
+const SiteFaviconFetchTimeout = 10 * time.Second
 
 var (
 	siteIconHTTPClient = &http.Client{
@@ -266,7 +272,7 @@ func GetSiteFaviconFast(bookmarkLink string, fallback string) string {
 	if iconURL == "" {
 		return fallback
 	}
-	return `<img src="` + html.EscapeString(iconURL) + `" referrerpolicy="no-referrer" decoding="sync" alt="">`
+	return `<img src="` + html.EscapeString(iconURL) + `" referrerpolicy="no-referrer" decoding="async" alt="">`
 }
 
 func GetYandexFavicon(bookmarkLink string, fallback string) string {
@@ -749,7 +755,56 @@ func refineOpaqueHostedSiteFavicon(ctx context.Context, rootIconURL string, data
 }
 
 func downloadSiteFaviconDirect(ctx context.Context, iconURL string) ([]byte, string, error) {
+	if len(iconURL) >= 5 && strings.EqualFold(iconURL[:5], "data:") {
+		return decodeSiteFaviconDataURL(ctx, iconURL)
+	}
 	return downloadSiteFaviconWithClient(ctx, iconURL, siteIconHTTPClient, nil)
+}
+
+func decodeSiteFaviconDataURL(ctx context.Context, iconURL string) ([]byte, string, error) {
+	if len(iconURL) > siteIconMaxBytes*4+1024 {
+		return nil, "", fmt.Errorf("favicon data URL too large")
+	}
+	u, err := url.Parse(iconURL)
+	if err != nil || u.Scheme != "data" || u.Opaque == "" {
+		return nil, "", fmt.Errorf("invalid favicon data URL")
+	}
+	metadata, payload, ok := strings.Cut(u.Opaque, ",")
+	if !ok {
+		return nil, "", fmt.Errorf("invalid favicon data URL payload")
+	}
+	encoded := strings.HasSuffix(strings.ToLower(metadata), ";base64")
+	if encoded {
+		metadata = metadata[:len(metadata)-len(";base64")]
+	}
+	mediaType, _, err := mime.ParseMediaType(metadata)
+	if err != nil || !strings.HasPrefix(mediaType, "image/") {
+		return nil, "", fmt.Errorf("unsupported favicon data URL media type")
+	}
+	payload, err = url.PathUnescape(payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("decode favicon data URL: %w", err)
+	}
+	var reader io.Reader = strings.NewReader(payload)
+	if encoded {
+		reader = base64.NewDecoder(base64.StdEncoding, reader)
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, siteIconMaxBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("decode favicon data URL: %w", err)
+	}
+	if len(data) == 0 || len(data) > siteIconMaxBytes {
+		return nil, "", fmt.Errorf("invalid favicon data URL size")
+	}
+	if err := acquireSiteIconDecodeSlot(ctx); err != nil {
+		return nil, "", err
+	}
+	defer func() { <-siteIconDecodeLimiter }()
+	contentType, ok := detectSiteFaviconContentType(data, mediaType)
+	if !ok {
+		return nil, "", fmt.Errorf("invalid favicon data URL image")
+	}
+	return data, contentType, nil
 }
 
 func downloadSiteFaviconWithClient(
@@ -768,7 +823,7 @@ func downloadSiteFaviconWithClient(
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; SuperFlare favicon fetcher)")
+	req.Header.Set("User-Agent", siteIconUserAgent)
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 
 	resp, err := client.Do(req)
@@ -1009,7 +1064,7 @@ func primaryHostedSiteFaviconHTTPClient() *http.Client {
 func safeSiteFaviconTransport() http.RoundTripper {
 	dialer := &net.Dialer{Timeout: siteIconRequestTimeout}
 	return &http.Transport{
-		Proxy:                 netutil.ProxyFromCurrentEnvironment,
+		Proxy:                 netutil.ProxyFromEnvironmentOrSystem,
 		DialContext:           dialer.DialContext,
 		TLSHandshakeTimeout:   siteIconRequestTimeout,
 		ResponseHeaderTimeout: siteIconRequestTimeout,

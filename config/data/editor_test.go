@@ -36,7 +36,7 @@ func TestGetBookmarksDataAsJSON(t *testing.T) {
 }
 
 func TestGetAndUpdateBookmarksFromEditor(t *testing.T) {
-
+	t.Chdir(t.TempDir())
 	const categories = `1,链接分类1
 2,链接分类2
 3,链接分类3
@@ -336,6 +336,11 @@ func TestGetBookmarksForEditorReturnsErrorWhenBookmarksConfigBroken(t *testing.T
 }
 
 func TestGetBookmarksForEditorReturnsErrorWhenEditorJSONMarshalFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureRuntimeDataFiles(); err != nil {
+		t.Fatalf("EnsureRuntimeDataFiles: %v", err)
+	}
+
 	original := jsonStringify
 	jsonStringify = func(data interface{}) (string, error) {
 		return "", errors.New("forced json stringify failure")

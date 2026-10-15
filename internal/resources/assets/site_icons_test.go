@@ -121,3 +121,41 @@ func TestSiteIconStreamRejectsInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteIconStreamExtendsServerWriteDeadline(t *testing.T) {
+	setupAssetsConfigDir(t)
+	const icon = `<svg xmlns="http://www.w3.org/2000/svg"><title>late-icon</title></svg>`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "image/svg+xml")
+		_, _ = io.WriteString(w, icon)
+	}))
+	defer upstream.Close()
+
+	app := echo.New()
+	app.Use(middleware.GzipWithConfig(middleware.GzipConfig{MinLength: 1024}))
+	RegisterRouting(app)
+	server := httptest.NewUnstartedServer(app)
+	server.Config.WriteTimeout = 20 * time.Millisecond
+	server.Start()
+	defer server.Close()
+
+	body, err := json.Marshal(map[string]any{"sources": []string{upstream.URL + "/favicon.ico"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Post(server.URL+"/assets/site-icons/stream", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("stream should outlive the ordinary server write deadline: %v", err)
+	}
+	defer response.Body.Close()
+	var result siteIconStreamResult
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil || string(result.Data) != icon {
+		t.Fatalf("late result was truncated: err=%v result=%+v", err, result)
+	}
+}
