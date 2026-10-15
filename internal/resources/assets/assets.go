@@ -104,6 +104,7 @@ func RegisterRouting(e *echo.Echo) {
 	}
 	e.GET(background.RemoteAssetPath, serveRemoteBackground)
 	e.GET("/assets/site-icons", serveSiteFavicon)
+	e.POST("/assets/site-icons/stream", serveSiteFaviconStream)
 	e.GET(background.UploadedFullPath, serveUploadedBackground)
 	e.GET(background.UploadedPreviewPath, serveUploadedBackgroundPreview)
 	e.GET("/user-assets/:file", serveUserAsset)
@@ -219,7 +220,7 @@ func serveSiteFavicon(c *echo.Context) error {
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	c.Response().Header().Set("Referrer-Policy", "no-referrer")
 
-	data, contentType, err := fn.FetchPublicSiteFavicon(iconURL)
+	data, contentType, err := fn.FetchPublicSiteFaviconContext(c.Request().Context(), iconURL)
 	if err == nil {
 		etag := ""
 		if currentAssetsRuntime().DebugMode {

@@ -1499,6 +1499,27 @@ func TestInlineSiteIconRefreshScriptDecodesBlobBeforeReplacingFallback(t *testin
 	}
 }
 
+func TestInlineSiteIconRefreshScriptStreamsEachCompletedIcon(t *testing.T) {
+	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
+	for _, expected := range []string{
+		`fetch("/assets/site-icons/stream"`,
+		`var chunk=await reader.read()`,
+		`lines.forEach(applyRecord)`,
+		`pending.delete(record.source)`,
+		`pending.delete(record.source);loadDirect(item.group,item.src);return;`,
+		`displayIcon(item.group,item.src,new Blob(`,
+		`streaming.slice(offset,offset+128)`,
+		`pending.forEach(function(item){loadDirect(item.group,item.src);})`,
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("favicon script is missing incremental streaming behavior %q", expected)
+		}
+	}
+	if strings.Contains(script, "Promise.all") {
+		t.Fatal("favicon display must not wait for all sources to finish")
+	}
+}
+
 func TestInlineSiteIconRefreshScriptFallsBackWhenDirectCachedIconFails(t *testing.T) {
 	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
 	for _, expected := range []string{

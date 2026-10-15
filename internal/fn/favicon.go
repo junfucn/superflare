@@ -27,7 +27,6 @@ import (
 	"github.com/junfuchang/superflare/internal/netutil"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
-	xhtml "golang.org/x/net/html"
 )
 
 const (
@@ -38,6 +37,7 @@ const (
 	siteIconMaxDecodedPixels   = 4 * 1024 * 1024
 	siteIconHTMLBytes          = 512 * 1024
 	siteIconWarmLimit          = 8
+	siteIconFetchLimit         = 32
 	siteIconDecodeLimit        = 2
 	siteIconRequestTimeout     = 4 * time.Second
 	siteIconOverallTimeout     = 10 * time.Second
@@ -61,7 +61,7 @@ var (
 	siteIconFailures      siteIconFailureCache
 	siteIconValidated     sync.Map
 	siteIconWarmLimiter   = make(chan struct{}, siteIconWarmLimit)
-	siteIconFetchLimiter  = make(chan struct{}, siteIconWarmLimit)
+	siteIconFetchLimiter  = make(chan struct{}, siteIconFetchLimit)
 	siteIconDecodeLimiter = make(chan struct{}, siteIconDecodeLimit)
 )
 
@@ -192,6 +192,24 @@ type siteIconCacheStamp struct {
 	modifiedUnixNano int64
 }
 
+type siteIconCacheValidation struct {
+	stamp       siteIconCacheStamp
+	contentType string
+}
+
+func validatedSiteFaviconContentType(cachePath string, info os.FileInfo) string {
+	stamp, ok := siteIconStamp(info)
+	if !ok {
+		return ""
+	}
+	if value, loaded := siteIconValidated.Load(cachePath); loaded {
+		if cached, ok := value.(siteIconCacheValidation); ok && cached.stamp == stamp {
+			return cached.contentType
+		}
+	}
+	return ""
+}
+
 func siteIconStamp(info os.FileInfo) (siteIconCacheStamp, bool) {
 	if info == nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > siteIconMaxBytes {
 		return siteIconCacheStamp{}, false
@@ -212,12 +230,11 @@ func hasValidatedSiteFaviconFast(iconURL string) bool {
 		siteIconValidated.Delete(cachePath)
 		return false
 	}
-	stamp, ok := siteIconStamp(info)
-	if !ok {
+	if _, ok := siteIconStamp(info); !ok {
 		siteIconValidated.Delete(cachePath)
 		return false
 	}
-	if cached, loaded := siteIconValidated.Load(cachePath); loaded && cached == stamp {
+	if validatedSiteFaviconContentType(cachePath, info) != "" {
 		return true
 	}
 
@@ -227,7 +244,7 @@ func hasValidatedSiteFaviconFast(iconURL string) bool {
 	default:
 		return false
 	}
-	_, _, err = readCachedSiteFaviconFile(cachePath)
+	_, _, err = readCachedSiteFaviconFile(context.Background(), cachePath, true)
 	return err == nil
 }
 
@@ -518,10 +535,14 @@ func ReadCachedPublicSiteFavicon(iconURL string) ([]byte, string, error) {
 }
 
 func FetchPublicSiteFavicon(iconURL string) ([]byte, string, error) {
+	return FetchPublicSiteFaviconContext(context.Background(), iconURL)
+}
+
+func FetchPublicSiteFaviconContext(ctx context.Context, iconURL string) ([]byte, string, error) {
 	if !isProxyableSiteFaviconURL(iconURL) {
 		return nil, "", fmt.Errorf("unsupported site favicon url")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), siteIconOverallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, siteIconOverallTimeout)
 	defer cancel()
 	return fetchAndCacheSiteFavicon(ctx, iconURL)
 }
@@ -585,7 +606,9 @@ func fetchAndCacheSiteFavicon(ctx context.Context, iconURL string) ([]byte, stri
 
 	data, contentType, err := downloadSiteFavicon(ctx, iconURL)
 	if err != nil {
-		recordSiteFaviconFailure(iconURL)
+		if !errors.Is(err, context.Canceled) {
+			recordSiteFaviconFailure(iconURL)
+		}
 		return nil, "", err
 	}
 	if err := writeCachedSiteFavicon(iconURL, data); err != nil {
@@ -620,13 +643,18 @@ func downloadSiteFavicon(ctx context.Context, iconURL string) ([]byte, string, e
 		return nil, "", errors.Join(append(attemptErrors, err)...)
 	}
 
-	discoveredURL, discoverErr := discoverSiteFaviconFromHTML(ctx, iconURL)
-	if discoverErr == nil && discoveredURL != "" && discoveredURL != iconURL {
-		data, contentType, discoveredErr := downloadSiteFaviconDirect(ctx, discoveredURL)
-		if discoveredErr == nil {
-			return data, contentType, nil
+	discoveredURLs, discoverErr := discoverSiteFaviconFromHTML(ctx, iconURL)
+	if discoverErr == nil {
+		for _, discoveredURL := range discoveredURLs {
+			if discoveredURL == iconURL {
+				continue
+			}
+			data, contentType, discoveredErr := downloadSiteFaviconDirect(ctx, discoveredURL)
+			if discoveredErr == nil {
+				return data, contentType, nil
+			}
+			attemptErrors = append(attemptErrors, fmt.Errorf("html favicon fetch failed: %w", discoveredErr))
 		}
-		attemptErrors = append(attemptErrors, fmt.Errorf("html favicon fetch failed: %w", discoveredErr))
 	} else if discoverErr != nil {
 		attemptErrors = append(attemptErrors, fmt.Errorf("html favicon discovery failed: %w", discoverErr))
 	}
@@ -900,113 +928,6 @@ func validSiteFaviconEntityTag(value string) bool {
 	return true
 }
 
-func discoverSiteFaviconFromHTML(ctx context.Context, rootIconURL string) (string, error) {
-	base, err := url.Parse(strings.TrimSpace(rootIconURL))
-	if err != nil || base == nil || base.Hostname() == "" {
-		return "", fmt.Errorf("invalid favicon URL")
-	}
-	if base.Scheme != "http" && base.Scheme != "https" {
-		return "", fmt.Errorf("unsupported page URL scheme")
-	}
-	base.Path = "/"
-	base.RawQuery = ""
-	base.Fragment = ""
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; SuperFlare favicon fetcher)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-
-	resp, err := siteIconHTTPClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("unexpected page status: %d", resp.StatusCode)
-	}
-
-	hrefs, err := collectFaviconHrefs(io.LimitReader(resp.Body, siteIconHTMLBytes))
-	if err != nil {
-		return "", err
-	}
-	pageURL := base
-	if resp.Request != nil && resp.Request.URL != nil {
-		pageURL = resp.Request.URL
-	}
-	for _, href := range hrefs {
-		ref, err := url.Parse(strings.TrimSpace(href))
-		if err != nil || ref == nil {
-			continue
-		}
-		resolved := pageURL.ResolveReference(ref)
-		if isProxyableSiteFaviconURL(resolved.String()) {
-			return resolved.String(), nil
-		}
-	}
-	return "", fmt.Errorf("no html favicon found")
-}
-
-func collectFaviconHrefs(reader io.Reader) ([]string, error) {
-	tokenizer := xhtml.NewTokenizer(reader)
-	var out []string
-	for {
-		switch tokenizer.Next() {
-		case xhtml.ErrorToken:
-			err := tokenizer.Err()
-			if err != nil && !errors.Is(err, io.EOF) {
-				return nil, err
-			}
-			return out, nil
-		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
-			token := tokenizer.Token()
-			if !strings.EqualFold(token.Data, "link") {
-				continue
-			}
-			if href, ok := faviconHrefFromAttributes(token.Attr); ok {
-				out = append(out, href)
-			}
-		case xhtml.EndTagToken:
-			if strings.EqualFold(tokenizer.Token().Data, "head") {
-				return out, nil
-			}
-		}
-	}
-}
-
-func faviconHrefFromAttributes(attributes []xhtml.Attribute) (string, bool) {
-	var rel string
-	var href string
-	for _, attr := range attributes {
-		switch strings.ToLower(strings.TrimSpace(attr.Key)) {
-		case "rel":
-			rel = attr.Val
-		case "href":
-			href = strings.TrimSpace(attr.Val)
-		}
-	}
-	if href == "" || !relLooksLikeFavicon(rel) {
-		return "", false
-	}
-	return href, true
-}
-
-func relLooksLikeFavicon(rel string) bool {
-	rel = strings.ToLower(strings.TrimSpace(rel))
-	if rel == "" {
-		return false
-	}
-	for _, token := range strings.Fields(strings.ReplaceAll(rel, ",", " ")) {
-		if token == "icon" || strings.Contains(token, "-icon") {
-			return true
-		}
-	}
-	return false
-}
-
 func validateSiteFaviconRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 5 {
 		return fmt.Errorf("%w: stopped after too many redirects", errSiteFaviconRedirectRejected)
@@ -1117,22 +1038,17 @@ func readCachedSiteFaviconContext(ctx context.Context, iconURL string) ([]byte, 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	cachePath, err := siteFaviconCachePath(iconURL)
 	if err != nil {
 		return nil, "", err
 	}
-	if _, err := os.Stat(cachePath); err != nil {
-		siteIconValidated.Delete(cachePath)
-		return nil, "", err
-	}
-	if err := acquireSiteIconDecodeSlot(ctx); err != nil {
-		return nil, "", err
-	}
-	defer func() { <-siteIconDecodeLimiter }()
-	return readCachedSiteFaviconFile(cachePath)
+	return readCachedSiteFaviconFile(ctx, cachePath, false)
 }
 
-func readCachedSiteFaviconFile(cachePath string) ([]byte, string, error) {
+func readCachedSiteFaviconFile(ctx context.Context, cachePath string, decodeSlotHeld bool) ([]byte, string, error) {
 	file, err := os.Open(cachePath)
 	if err != nil {
 		siteIconValidated.Delete(cachePath)
@@ -1158,6 +1074,15 @@ func readCachedSiteFaviconFile(cachePath string) ([]byte, string, error) {
 		_ = os.Remove(cachePath)
 		return nil, "", fmt.Errorf("cached favicon too large")
 	}
+	if contentType := validatedSiteFaviconContentType(cachePath, info); contentType != "" && int64(len(data)) == info.Size() {
+		return data, contentType, nil
+	}
+	if !decodeSlotHeld {
+		if err := acquireSiteIconDecodeSlot(ctx); err != nil {
+			return nil, "", err
+		}
+		defer func() { <-siteIconDecodeLimiter }()
+	}
 	contentType, ok := detectSiteFaviconContentType(data, "")
 	if !ok {
 		siteIconValidated.Delete(cachePath)
@@ -1165,7 +1090,7 @@ func readCachedSiteFaviconFile(cachePath string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("unexpected cached content type")
 	}
 	if stamp, ok := siteIconStamp(info); ok {
-		siteIconValidated.Store(cachePath, stamp)
+		siteIconValidated.Store(cachePath, siteIconCacheValidation{stamp: stamp, contentType: contentType})
 	}
 	return data, contentType, nil
 }
