@@ -47,4 +47,13 @@ type Application struct {
 	GlassIntensity             int    `yaml:"GlassIntensity,omitempty"`
 	HomeMaxColumns             int    `yaml:"HomeMaxColumns,omitempty"`
 	HomeMaxWidth               int    `yaml:"HomeMaxWidth,omitempty"`
+	CustomScripts              string `yaml:"CustomScripts,omitempty"`
+
+	// SEO / AI discoverability
+	SiteURL        string `yaml:"SiteURL,omitempty"`
+	SEODescription string `yaml:"SEODescription,omitempty"`
+	SEOKeywords    string `yaml:"SEOKeywords,omitempty"`
+	SEOImage       string `yaml:"SEOImage,omitempty"`
+	SEOAuthor      string `yaml:"SEOAuthor,omitempty"`
+	SEONoIndex     bool   `yaml:"SEONoIndex,omitempty"`
 }

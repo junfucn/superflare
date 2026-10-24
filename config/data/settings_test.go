@@ -512,6 +512,105 @@ func TestGetAllSettingsOptionsReturnsErrorWhenThemeBaseInvalid(t *testing.T) {
 	}
 }
 
+func TestGetAllSettingsOptionsReturnsErrorWhenSEOSettingsInvalid(t *testing.T) {
+	longDescription := strings.Repeat("a", 513)
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "site url scheme",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSiteURL: ftp://example.com\n",
+			want:    "site url must start with http:// or https://",
+		},
+		{
+			name:    "site url missing host",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSiteURL: https:///path\n",
+			want:    "invalid site url value: https:///path",
+		},
+		{
+			name:    "site url with query",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSiteURL: https://example.com/?a=1\n",
+			want:    "invalid site url value: https://example.com/?a=1",
+		},
+		{
+			name:    "seo image not a url",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSEOImage: not-a-url\n",
+			want:    "invalid seo image value: not-a-url",
+		},
+		{
+			name:    "seo description too long",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSEODescription: " + longDescription + "\n",
+			want:    "seo description must be at most 512 characters",
+		},
+		{
+			name:    "seo author too long",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSEOAuthor: " + strings.Repeat("b", 201) + "\n",
+			want:    "seo author must be at most 200 characters",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			withTempWorkingDir(t)
+			if err := os.WriteFile("config.yml", []byte(tc.content), 0644); err != nil {
+				t.Fatalf("write config.yml: %v", err)
+			}
+
+			_, err := GetAllSettingsOptions()
+			if err == nil {
+				t.Fatal("expected GetAllSettingsOptions to fail")
+			}
+			if err.Error() != tc.want {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdateSEOPersistsAndNormalizesValues(t *testing.T) {
+	withTempWorkingDir(t)
+	if err := UpdateSEO(model.Application{
+		SiteURL:        "  https://nav.example.com/  ",
+		SEODescription: "  Personal start page  ",
+		SEOKeywords:    " nav, bookmarks ",
+		SEOImage:       "/user-assets/og.png",
+		SEOAuthor:      " Junfu ",
+		SEONoIndex:     true,
+	}); err != nil {
+		t.Fatalf("UpdateSEO: %v", err)
+	}
+
+	options, err := GetAllSettingsOptions()
+	if err != nil {
+		t.Fatalf("GetAllSettingsOptions: %v", err)
+	}
+	if options.SiteURL != "https://nav.example.com" {
+		t.Fatalf("expected trimmed site url, got %q", options.SiteURL)
+	}
+	if options.SEODescription != "Personal start page" || options.SEOKeywords != "nav, bookmarks" || options.SEOAuthor != "Junfu" {
+		t.Fatalf("expected trimmed seo text, got %#v", options)
+	}
+	if options.SEOImage != "/user-assets/og.png" || !options.SEONoIndex {
+		t.Fatalf("expected image and noindex persisted, got %#v", options)
+	}
+	if options.Title != "SuperFlare" {
+		t.Fatalf("UpdateSEO should not touch unrelated settings, got title %q", options.Title)
+	}
+}
+
+func TestUpdateSEORejectsInvalidSiteURL(t *testing.T) {
+	withTempWorkingDir(t)
+	err := UpdateSEO(model.Application{SiteURL: "example.com"})
+	if err == nil {
+		t.Fatal("expected UpdateSEO to reject a relative site url")
+	}
+	if err.Error() != "site url must start with http:// or https://" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGetAllSettingsOptionsReturnsErrorWhenBookmarkColorInvalid(t *testing.T) {
 	withTempWorkingDir(t)
 	if err := os.WriteFile("config.yml", []byte("Title: SuperFlare\nLocale: zh\nTheme: blackboard\nBookmarkCategoryColor: bad-color\n"), 0644); err != nil {

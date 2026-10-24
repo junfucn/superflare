@@ -270,7 +270,7 @@ func TestHomeTemplateFavoritesModuleOrderAndTooltipNonce(t *testing.T) {
 	for _, expected := range []string{
 		`{{ if .OptionShowFavorites }}`,
 		`class="plugin-container clearfix bookmark-module" id="container-favorites"`,
-		`<h2>{{.FavoritesTitle}}</h2>`,
+		`<h2 id="favorites-heading">{{.FavoritesTitle}}</h2>`,
 		`{{.Favorites}}`,
 		`class="plugin-container clearfix bookmark-module" id="container-bookmakrs"`,
 		`{{ if .InlineBookmarkTooltipScript }}`,

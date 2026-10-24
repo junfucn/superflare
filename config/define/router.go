@@ -78,6 +78,16 @@ func getSettingPages() model.RouteMaps {
 			Title: "Others",
 			Path:  "/settings/application",
 		},
+		SEO: model.Page{
+			Name:  "SEO",
+			Title: "SEO",
+			Path:  "/settings/seo",
+		},
+		Scripts: model.Page{
+			Name:  "Scripts",
+			Title: "Scripts",
+			Path:  "/settings/scripts",
+		},
 	}
 }
 

@@ -2,7 +2,9 @@ package data
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/config/validation"
@@ -175,6 +177,11 @@ func normalizeSettingsOptions(options model.Application) (model.Application, err
 	if options.GlassEffect == "" {
 		options.GlassEffect = "none"
 	}
+	options.SiteURL = strings.TrimRight(strings.TrimSpace(options.SiteURL), "/")
+	options.SEODescription = strings.TrimSpace(options.SEODescription)
+	options.SEOKeywords = strings.TrimSpace(options.SEOKeywords)
+	options.SEOImage = strings.TrimSpace(options.SEOImage)
+	options.SEOAuthor = strings.TrimSpace(options.SEOAuthor)
 	return options, nil
 }
 
@@ -304,7 +311,45 @@ func validateSettingsOptions(options model.Application) error {
 		return fmt.Errorf("home max width must be between 0 and 2400")
 	}
 
+	if siteURL := strings.TrimSpace(options.SiteURL); siteURL != "" {
+		parsed, err := url.Parse(siteURL)
+		if err != nil {
+			return fmt.Errorf("invalid site url value: %s", options.SiteURL)
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "http" && scheme != "https" {
+			return fmt.Errorf("site url must start with http:// or https://")
+		}
+		if parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery {
+			return fmt.Errorf("invalid site url value: %s", options.SiteURL)
+		}
+	}
+	if seoImage := strings.TrimSpace(options.SEOImage); seoImage != "" && !isValidSEOImage(seoImage) {
+		return fmt.Errorf("invalid seo image value: %s", options.SEOImage)
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(options.SEODescription)) > 512 {
+		return fmt.Errorf("seo description must be at most 512 characters")
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(options.SEOKeywords)) > 512 {
+		return fmt.Errorf("seo keywords must be at most 512 characters")
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(options.SEOAuthor)) > 200 {
+		return fmt.Errorf("seo author must be at most 200 characters")
+	}
+
 	return nil
+}
+
+func isValidSEOImage(raw string) bool {
+	if strings.HasPrefix(raw, "/") {
+		return true
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return scheme == "http" || scheme == "https"
 }
 
 func UpdateAppearance(update model.Application) error {
@@ -338,6 +383,36 @@ func UpdateAppearance(update model.Application) error {
 		options.Locale = i18n.NormalizeLocale(update.Locale)
 		options.HomeMaxColumns = update.HomeMaxColumns
 		options.HomeMaxWidth = update.HomeMaxWidth
+		return options, nil
+	})
+}
+
+func UpdateSEO(update model.Application) error {
+	if err := EnsureAppConfigExists(); err != nil {
+		return err
+	}
+	return updateLockedAppConfig("config", func(options model.Application) (model.Application, error) {
+		// Store the canonical forms so the YAML file stays tidy; reads normalize
+		// again defensively.
+		options.SiteURL = strings.TrimRight(strings.TrimSpace(update.SiteURL), "/")
+		options.SEODescription = strings.TrimSpace(update.SEODescription)
+		options.SEOKeywords = strings.TrimSpace(update.SEOKeywords)
+		options.SEOImage = strings.TrimSpace(update.SEOImage)
+		options.SEOAuthor = strings.TrimSpace(update.SEOAuthor)
+		options.SEONoIndex = update.SEONoIndex
+		if err := validateSettingsOptions(options); err != nil {
+			return model.Application{}, err
+		}
+		return options, nil
+	})
+}
+
+func UpdateCustomScripts(scripts string) error {
+	if err := EnsureAppConfigExists(); err != nil {
+		return err
+	}
+	return updateLockedAppConfig("config", func(options model.Application) (model.Application, error) {
+		options.CustomScripts = scripts
 		return options, nil
 	})
 }

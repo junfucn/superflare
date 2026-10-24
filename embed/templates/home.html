@@ -6,7 +6,27 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="google" content="notranslate">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{.OptionTitle}}</title>
+  <title>{{ if .SEOTitle }}{{.SEOTitle}}{{ else }}{{.OptionTitle}}{{ end }}</title>
+  {{ if .SEODescription }}<meta name="description" content="{{.SEODescription}}">{{ end }}
+  {{ if .SEOKeywords }}<meta name="keywords" content="{{.SEOKeywords}}">{{ end }}
+  {{ if .SEOAuthor }}<meta name="author" content="{{.SEOAuthor}}">{{ end }}
+  {{ if .SEORobots }}<meta name="robots" content="{{.SEORobots}}">{{ end }}
+  {{ if .SEOCanonical }}<link rel="canonical" href="{{.SEOCanonical}}">{{ end }}
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+  {{ if .SEOCanonical }}
+  <meta property="og:type" content="{{ if .SEOType }}{{.SEOType}}{{ else }}website{{ end }}">
+  <meta property="og:site_name" content="{{ .OptionTitle }}">
+  <meta property="og:title" content="{{ if .SEOTitle }}{{.SEOTitle}}{{ else }}{{.OptionTitle}}{{ end }}">
+  {{ if .SEODescription }}<meta property="og:description" content="{{.SEODescription}}">{{ end }}
+  <meta property="og:url" content="{{.SEOCanonical}}">
+  {{ if .SEOLocale }}<meta property="og:locale" content="{{.SEOLocale}}">{{ end }}
+  {{ if .SEOImage }}<meta property="og:image" content="{{.SEOImage}}"><meta property="og:image:alt" content="{{.SEOImageAlt}}">{{ end }}
+  <meta name="twitter:card" content="{{ if .SEOImage }}summary_large_image{{ else }}summary{{ end }}">
+  <meta name="twitter:title" content="{{ if .SEOTitle }}{{.SEOTitle}}{{ else }}{{.OptionTitle}}{{ end }}">
+  {{ if .SEODescription }}<meta name="twitter:description" content="{{.SEODescription}}">{{ end }}
+  {{ if .SEOImage }}<meta name="twitter:image" content="{{.SEOImage}}">{{ end }}
+  {{ end }}
+  {{ if .SEOJSONLD }}<script type="application/ld+json">{{.SEOJSONLD}}</script>{{ end }}
   <link rel="icon" href="{{ SiteIconURL .OptionSiteIcon }}"/>
   <link rel="shortcut icon" href="{{ SiteIconURL .OptionSiteIcon }}"/>
   {{ if eq .OptionSiteIcon "" }}
@@ -24,7 +44,6 @@
   {{ else }}
   <style type="text/css">{{.PageInlineStyle}}</style>
   {{ end }}
-  <meta name="description" content="SuperFlare 是一款面向个人、兼具极致性能与极低资源开销的轻量化自托管导航首页，主打零散书签整理、内网服务快速访问与快捷导航管理。"/>
   {{.CustomHomeStyle}}
   <style>
     #btn-open-settings.toolbar-btn-link,
@@ -133,15 +152,18 @@
       line-height: 1.6;
     }
   </style>
+  {{.CustomScripts}}
 </head>
 <body style="{{.PageAppearance}}" class="{{.BodyClassName}}">
+  <a class="skip-link" href="#main-content">{{ T .Locale "skip_to_content" }}</a>
   {{.BackgroundHTML}}
   <div class="pageview" id="page-home">
-    <div class="container no-select">
+    <main class="container no-select" id="main-content">
+      {{ if and (not .OptionShowTitle) (not .SubPage) }}<h1 class="sr-only">{{ .OptionTitle }}</h1>{{ end }}
 
       {{ if .ShowSearchComponent }}
       <div class="module-container" id="search-container">
-        <form action="/" method="POST"{{ if .SearchFormTarget }} target="{{.SearchFormTarget}}"{{ end }}{{ if .SearchFormRel }} rel="{{.SearchFormRel}}"{{ end }}>
+        <form action="/" method="POST" role="search"{{ if .SearchFormTarget }} target="{{.SearchFormTarget}}"{{ end }}{{ if .SearchFormRel }} rel="{{.SearchFormRel}}"{{ end }}>
           {{ if .DisabledSearchAutoFocus }}
           <input type="text" name="search" id="search" autocomplete="off" placeholder="{{.SearchKeyword}}"/>
           {{ else }}
@@ -176,8 +198,8 @@
       {{ end }}
 
       {{ if .OptionShowApps }}
-      <div class="plugin-container" id="container-apps">
-        <h2><a href="{{.ApplicationsURI}}">{{.AppsTitle}}</a></h2>
+      <div class="plugin-container" id="container-apps" aria-labelledby="apps-heading">
+        <h2 id="apps-heading"><a href="{{.ApplicationsURI}}">{{.AppsTitle}}</a></h2>
         <div class="apps-container clearfix apps-surface">
           {{.Applications}}
         </div>
@@ -185,15 +207,15 @@
       {{ end }}
 
       {{ if .OptionShowFavorites }}
-      <div class="plugin-container clearfix bookmark-module" id="container-favorites">
-        <h2>{{.FavoritesTitle}}</h2>
+      <div class="plugin-container clearfix bookmark-module" id="container-favorites" aria-labelledby="favorites-heading">
+        <h2 id="favorites-heading">{{.FavoritesTitle}}</h2>
         {{.Favorites}}
       </div>
       {{ end }}
 
       {{ if .OptionShowBookmarks }}
-      <div class="plugin-container clearfix bookmark-module" id="container-bookmakrs">
-        <h2><a href="{{.BookmarksURI}}">{{.BookmarksTitle}}</a></h2>
+      <div class="plugin-container clearfix bookmark-module" id="container-bookmakrs" aria-labelledby="bookmarks-heading">
+        <h2 id="bookmarks-heading"><a href="{{.BookmarksURI}}">{{.BookmarksTitle}}</a></h2>
         {{.Bookmarks}}
       </div>
       {{ end }}
@@ -244,7 +266,7 @@
         {{ end }}
       </div>
 
-    </div>
+    </main>
   </div>
   {{ if and .OptionShowApps .HasApplicationSubdirectories }}
   {{.ApplicationSubdirectoryModals}}

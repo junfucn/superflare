@@ -414,7 +414,7 @@ func renderPage(options model.Application, status int, page Page) []byte {
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="`)
 	b.WriteString(template.HTMLEscapeString(page.Lang))
-	b.WriteString(`"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>`)
+	b.WriteString(`"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex"><title>`)
 	b.WriteString(template.HTMLEscapeString(page.Title))
 	b.WriteString(`</title><style>*{margin:0;padding:0;box-sizing:border-box;}html{scrollbar-width:thin;scrollbar-color:var(--status-scrollbar, var(--color-accent)) rgba(255,255,255,.08);}body,*{scrollbar-width:thin;scrollbar-color:var(--status-scrollbar, var(--color-accent)) rgba(255,255,255,.08);}*::-webkit-scrollbar{width:10px;height:10px;}*::-webkit-scrollbar-track{background:rgba(255,255,255,.08);border-radius:999px;}*::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--status-scrollbar, var(--color-accent)) 0%,color-mix(in srgb,var(--status-scrollbar, var(--color-accent)) 72%,transparent) 100%);border:2px solid color-mix(in srgb,var(--color-background) 55%,transparent);border-radius:999px;}body{min-height:100vh;background:var(--color-background);color:var(--color-primary);font-family:Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;line-height:1.6;position:relative;overflow-x:hidden;}body::after{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(0,0,0,.18),rgba(0,0,0,.40));}`)
 	b.WriteString(backgroundStyle)

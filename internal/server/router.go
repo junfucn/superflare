@@ -22,11 +22,14 @@ import (
 	"github.com/junfuchang/superflare/internal/resources/assets"
 	"github.com/junfuchang/superflare/internal/resources/mdi"
 	"github.com/junfuchang/superflare/internal/resources/templates"
+	"github.com/junfuchang/superflare/internal/seo"
 	"github.com/junfuchang/superflare/internal/settings"
 	"github.com/junfuchang/superflare/internal/settings/appearance"
 	"github.com/junfuchang/superflare/internal/settings/others"
 	settingsports "github.com/junfuchang/superflare/internal/settings/ports"
+	"github.com/junfuchang/superflare/internal/settings/scripts"
 	"github.com/junfuchang/superflare/internal/settings/search"
+	settingsseo "github.com/junfuchang/superflare/internal/settings/seo"
 	"github.com/junfuchang/superflare/internal/settings/theme"
 	"github.com/junfuchang/superflare/internal/statuspage"
 )
@@ -119,6 +122,7 @@ func NewRouter(appFlags *model.Flags) (http.Handler, error) {
 	home.StoreRuntimeFlags(effectiveFlags)
 	home.SetHelpRuntimeFlags(effectiveFlags)
 	guide.SetRuntimeFlags(effectiveFlags)
+	seo.SetRuntimeFlags(effectiveFlags)
 
 	e := echo.New()
 	e.HTTPErrorHandler = statuspage.HTTPErrorHandler
@@ -146,6 +150,9 @@ func NewRouter(appFlags *model.Flags) (http.Handler, error) {
 	appearance.RegisterRouting(e)
 	settingsports.RegisterRouting(e)
 	others.RegisterRouting(e)
+	settingsseo.RegisterRouting(e)
+	scripts.RegisterRouting(e)
+	seo.RegisterRouting(e)
 
 	if err := mdi.Init(); err != nil {
 		return nil, fmt.Errorf("initialize mdi resources: %w", err)

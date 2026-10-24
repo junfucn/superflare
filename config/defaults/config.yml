@@ -31,3 +31,10 @@ GlassEffect: none
 GlassIntensity: 30
 HomeMaxColumns: 5
 HomeMaxWidth: 1600
+CustomScripts: ""
+SiteURL: ""
+SEODescription: ""
+SEOKeywords: ""
+SEOImage: ""
+SEOAuthor: ""
+SEONoIndex: false

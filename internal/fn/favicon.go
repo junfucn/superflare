@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/junfuchang/superflare/internal/logger"
 	"github.com/junfuchang/superflare/internal/netutil"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
@@ -46,6 +47,11 @@ const (
 	siteIconHostedTimeout      = 6 * time.Second
 	siteIconFailureTTL         = 5 * time.Minute
 	siteIconFailureMaxEntries  = 1024
+	siteIconMissingTTL         = 45 * time.Second
+	siteIconSourceCacheLimit   = 4096
+	siteIconMemoryTTL          = 10 * time.Minute
+	siteIconMemoryMaxEntries   = 128
+	siteIconMemoryMaxBytes     = 8 * 1024 * 1024
 	siteIconHostedHost         = "favicon.im"
 	siteIconHostedAssetHost    = "a.favicon.im"
 	siteIconHostedSourceHeader = "X-Favicon-Source"
@@ -65,11 +71,20 @@ var (
 	}
 	siteIconInflight      sync.Map
 	siteIconFailures      siteIconFailureCache
+	siteIconMissing       siteIconFailureCache
+	siteIconMemory        siteIconMemoryCache
 	siteIconValidated     sync.Map
 	siteIconWarmLimiter   = make(chan struct{}, siteIconWarmLimit)
 	siteIconFetchLimiter  = make(chan struct{}, siteIconFetchLimit)
 	siteIconDecodeLimiter = make(chan struct{}, siteIconDecodeLimit)
+	// siteIconCacheWriteWarning makes the read-only cache directory warning
+	// appear once per process instead of once per icon.
+	siteIconCacheWriteWarning sync.Once
 )
+
+// writeSiteFaviconCache is a seam for tests that need to simulate an
+// unwritable cache directory.
+var writeSiteFaviconCache = writeCachedSiteFavicon
 
 var (
 	errSiteFaviconSourceNotAllowed = errors.New("site favicon source is not allowed")
@@ -136,19 +151,157 @@ func (c *siteIconFailureCache) Len() int {
 	return len(c.entries)
 }
 
-func GetSiteFaviconURL(bookmarkLink string) string {
+// siteIconMemoryEntry is a downloaded favicon that could not be persisted to
+// the on-disk cache, kept in memory so the icon can still be served.
+type siteIconMemoryEntry struct {
+	data        []byte
+	contentType string
+	expires     time.Time
+}
+
+// siteIconMemoryCache is a bounded last-resort store for favicons whose cache
+// file could not be written. The cache directory may be read-only (container
+// image, restricted integrity level, sandboxed process token), and losing a
+// writable directory must not degrade every icon to the built-in glyph: the
+// download already succeeded, so the bytes are kept in memory instead.
+type siteIconMemoryCache struct {
+	mu         sync.Mutex
+	entries    map[string]siteIconMemoryEntry
+	totalBytes int
+}
+
+func (c *siteIconMemoryCache) Load(key string, now time.Time) ([]byte, string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[key]
+	if !ok {
+		return nil, "", false
+	}
+	if !now.Before(entry.expires) {
+		c.removeLocked(key)
+		return nil, "", false
+	}
+	return append([]byte(nil), entry.data...), entry.contentType, true
+}
+
+func (c *siteIconMemoryCache) Store(key string, data []byte, contentType string, now time.Time) {
+	if len(data) == 0 || len(data) > siteIconMaxBytes {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]siteIconMemoryEntry)
+	}
+	c.removeLocked(key)
+	for len(c.entries) > 0 &&
+		(len(c.entries) >= siteIconMemoryMaxEntries || c.totalBytes+len(data) > siteIconMemoryMaxBytes) {
+		oldestKey := ""
+		var oldestExpiry time.Time
+		for existingKey, entry := range c.entries {
+			if oldestKey == "" || entry.expires.Before(oldestExpiry) {
+				oldestKey = existingKey
+				oldestExpiry = entry.expires
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		c.removeLocked(oldestKey)
+	}
+	c.entries[key] = siteIconMemoryEntry{data: data, contentType: contentType, expires: now.Add(siteIconMemoryTTL)}
+	c.totalBytes += len(data)
+}
+
+func (c *siteIconMemoryCache) Delete(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.removeLocked(key)
+}
+
+func (c *siteIconMemoryCache) removeLocked(key string) {
+	entry, ok := c.entries[key]
+	if !ok {
+		return
+	}
+	delete(c.entries, key)
+	c.totalBytes -= len(entry.data)
+	if c.totalBytes < 0 {
+		c.totalBytes = 0
+	}
+}
+
+func (c *siteIconMemoryCache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.entries)
+}
+
+// siteIconSourceEntry is the memoized result of resolving a bookmark link to
+// its canonical favicon source URL.
+type siteIconSourceEntry struct {
+	iconURL   string
+	proxyable bool
+}
+
+// siteIconSourceCache memoizes resolveSiteFaviconSource. The resolution only
+// depends on the bookmark link, so the result never goes stale. Bookmark lists
+// are small and change rarely, which keeps the cache tiny; the size guard only
+// exists to bound memory for pathological inputs.
+type siteIconSourceCacheStore struct {
+	mu      sync.RWMutex
+	entries map[string]siteIconSourceEntry
+}
+
+func (c *siteIconSourceCacheStore) Load(key string) (siteIconSourceEntry, bool) {
+	c.mu.RLock()
+	entry, ok := c.entries[key]
+	c.mu.RUnlock()
+	return entry, ok
+}
+
+func (c *siteIconSourceCacheStore) Store(key string, entry siteIconSourceEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]siteIconSourceEntry)
+	}
+	if _, exists := c.entries[key]; !exists && len(c.entries) >= siteIconSourceCacheLimit {
+		clear(c.entries)
+	}
+	c.entries[key] = entry
+}
+
+var siteIconSources siteIconSourceCacheStore
+
+// resolveSiteFaviconSource derives the canonical favicon URL for a bookmark
+// link with a single URL parse and reports whether that URL can be served
+// through the favicon proxy.
+//
+// The derived URL is built from the parsed scheme and host only, so it never
+// carries userinfo and always re-parses as a proxyable URL whenever it is
+// non-empty. That is why proxyable simply mirrors "we produced a URL".
+func resolveSiteFaviconSource(bookmarkLink string) (string, bool) {
 	bookmarkLink = strings.TrimSpace(bookmarkLink)
 	if bookmarkLink == "" {
-		return ""
+		return "", false
 	}
+	if cached, ok := siteIconSources.Load(bookmarkLink); ok {
+		return cached.iconURL, cached.proxyable
+	}
+	iconURL := ""
 	u, err := url.Parse(bookmarkLink)
-	if err != nil || u.Hostname() == "" {
-		return ""
+	if err == nil && u.Hostname() != "" && strings.TrimSpace(u.Scheme) != "" {
+		iconURL = (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/favicon.ico"}).String()
 	}
-	if strings.TrimSpace(u.Scheme) == "" {
-		return ""
-	}
-	return (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/favicon.ico"}).String()
+	entry := siteIconSourceEntry{iconURL: iconURL, proxyable: iconURL != ""}
+	siteIconSources.Store(bookmarkLink, entry)
+	return entry.iconURL, entry.proxyable
+}
+
+func GetSiteFaviconURL(bookmarkLink string) string {
+	iconURL, _ := resolveSiteFaviconSource(bookmarkLink)
+	return iconURL
 }
 
 func isProxyableSiteFaviconURL(iconURL string) bool {
@@ -166,11 +319,11 @@ func isProxyableSiteFaviconURL(iconURL string) bool {
 }
 
 func GetSiteFaviconAssetURL(bookmarkLink string) string {
-	iconURL := GetSiteFaviconURL(bookmarkLink)
+	iconURL, proxyable := resolveSiteFaviconSource(bookmarkLink)
 	if iconURL == "" {
 		return ""
 	}
-	if isProxyableSiteFaviconURL(iconURL) {
+	if proxyable {
 		if siteFaviconFailureActive(iconURL) {
 			return ""
 		}
@@ -180,11 +333,11 @@ func GetSiteFaviconAssetURL(bookmarkLink string) string {
 }
 
 func GetSiteFaviconAssetURLFast(bookmarkLink string) string {
-	iconURL := GetSiteFaviconURL(bookmarkLink)
+	iconURL, proxyable := resolveSiteFaviconSource(bookmarkLink)
 	if iconURL == "" {
 		return ""
 	}
-	if isProxyableSiteFaviconURL(iconURL) {
+	if proxyable {
 		if hasValidatedSiteFaviconFast(iconURL) {
 			return siteIconProxyURL(iconURL)
 		}
@@ -227,15 +380,33 @@ func siteIconStamp(info os.FileInfo) (siteIconCacheStamp, bool) {
 }
 
 func hasValidatedSiteFaviconFast(iconURL string) bool {
+	// Icons served from the memory fallback are already validated by the
+	// download path, and their cache file may not exist at all (unwritable
+	// cache directory), so the stat-based checks below cannot see them.
+	if _, _, ok := siteIconMemory.Load(iconURL, time.Now()); ok {
+		return true
+	}
 	cachePath, err := siteFaviconCachePath(iconURL)
 	if err != nil {
+		return false
+	}
+	// Statting the cache file is far more expensive than a map lookup, and a
+	// bookmark list usually resolves to the same set of links on every render.
+	// Remembering recent "no cache file yet" answers for a short while keeps
+	// page renders from paying one syscall per bookmark per request, while the
+	// TTL (plus invalidation on write) keeps freshly fetched icons snappy.
+	if siteIconMissing.Active(cachePath, time.Now()) {
 		return false
 	}
 	info, err := os.Stat(cachePath)
 	if err != nil {
 		siteIconValidated.Delete(cachePath)
+		if os.IsNotExist(err) {
+			siteIconMissing.Store(cachePath, time.Now().Add(siteIconMissingTTL))
+		}
 		return false
 	}
+	siteIconMissing.Delete(cachePath)
 	if _, ok := siteIconStamp(info); !ok {
 		siteIconValidated.Delete(cachePath)
 		return false
@@ -575,6 +746,12 @@ func fetchAndCacheSiteFavicon(ctx context.Context, iconURL string) ([]byte, stri
 	} else if ctx.Err() != nil {
 		return nil, "", ctx.Err()
 	}
+	// A favicon that was downloaded but could not be written to the cache
+	// directory still lives in memory; serve it rather than re-downloading it
+	// on every request.
+	if data, contentType, ok := siteIconMemory.Load(iconURL, time.Now()); ok {
+		return data, contentType, nil
+	}
 	if siteFaviconFailureActive(iconURL) {
 		return nil, "", errSiteFaviconRetryCooldown
 	}
@@ -592,6 +769,11 @@ func fetchAndCacheSiteFavicon(ctx context.Context, iconURL string) ([]byte, stri
 			}
 		}
 		data, contentType, err := readCachedSiteFaviconContext(ctx, iconURL)
+		if err != nil {
+			if memoryData, memoryContentType, ok := siteIconMemory.Load(iconURL, time.Now()); ok {
+				return memoryData, memoryContentType, nil
+			}
+		}
 		if err != nil && siteFaviconFailureActive(iconURL) {
 			return nil, "", errSiteFaviconRetryCooldown
 		}
@@ -617,9 +799,22 @@ func fetchAndCacheSiteFavicon(ctx context.Context, iconURL string) ([]byte, stri
 		}
 		return nil, "", err
 	}
-	if err := writeCachedSiteFavicon(iconURL, data); err != nil {
-		return nil, "", err
+	if err := writeSiteFaviconCache(iconURL, data); err != nil {
+		// The download succeeded; only persisting it failed. A read-only cache
+		// directory (container image, restricted process token, sandbox) must
+		// not turn every icon into the built-in fallback glyph, so keep the
+		// bytes in memory and serve them from there until the process exits.
+		siteIconCacheWriteWarning.Do(func() {
+			logger.GetLogger().Warn("站点图标缓存目录不可写，图标将仅缓存在内存中（重启后需重新抓取）",
+				"error", err, "cache_dir", siteIconCacheDir)
+		})
+		siteIconMemory.Store(iconURL, data, contentType, time.Now())
+		clearSiteFaviconFailure(iconURL)
+		return data, contentType, nil
 	}
+	// A write invalidates any memory copy: the on-disk cache is authoritative
+	// from now on, and the memory copy must not outlive a cache rewrite.
+	siteIconMemory.Delete(iconURL)
 	clearSiteFaviconFailure(iconURL)
 	return data, contentType, nil
 }
@@ -1170,7 +1365,38 @@ func writeCachedSiteFavicon(iconURL string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
 		return err
 	}
-	return writeSiteFaviconCacheAtomic(cachePath, data)
+	err = writeSiteFaviconCacheAtomic(cachePath, data)
+	if err == nil {
+		// A fresh cache file makes the short-lived "known missing" memo stale.
+		siteIconMissing.Delete(cachePath)
+	}
+	return err
+}
+
+// siteIconCachePaths memoizes siteFaviconCachePath, which otherwise costs a
+// SHA-256 of the source URL plus a filepath.Join (which cleans and re-allocates
+// the whole path) for every bookmark on every render. Entries remember the
+// working directory they were derived from, so a changed working directory
+// (tests chdir constantly) transparently recomputes instead of returning a
+// stale absolute path.
+var siteIconCachePaths struct {
+	mu      sync.RWMutex
+	entries map[string]siteIconCachePathEntry
+}
+
+type siteIconCachePathEntry struct {
+	root      string
+	cachePath string
+}
+
+func cachedSiteFaviconCachePath(root string, iconURL string) string {
+	siteIconCachePaths.mu.RLock()
+	entry, ok := siteIconCachePaths.entries[iconURL]
+	siteIconCachePaths.mu.RUnlock()
+	if ok && entry.root == root {
+		return entry.cachePath
+	}
+	return ""
 }
 
 func siteFaviconCachePath(iconURL string) (string, error) {
@@ -1178,7 +1404,20 @@ func siteFaviconCachePath(iconURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, siteIconCacheDir, siteFaviconCacheKey(iconURL)+".bin"), nil
+	if cachePath := cachedSiteFaviconCachePath(root, iconURL); cachePath != "" {
+		return cachePath, nil
+	}
+	cachePath := filepath.Join(root, siteIconCacheDir, siteFaviconCacheKey(iconURL)+".bin")
+	siteIconCachePaths.mu.Lock()
+	if siteIconCachePaths.entries == nil {
+		siteIconCachePaths.entries = make(map[string]siteIconCachePathEntry)
+	}
+	if _, exists := siteIconCachePaths.entries[iconURL]; !exists && len(siteIconCachePaths.entries) >= siteIconSourceCacheLimit {
+		clear(siteIconCachePaths.entries)
+	}
+	siteIconCachePaths.entries[iconURL] = siteIconCachePathEntry{root: root, cachePath: cachePath}
+	siteIconCachePaths.mu.Unlock()
+	return cachePath, nil
 }
 
 func siteFaviconCacheKey(iconURL string) string {

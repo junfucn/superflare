@@ -24,6 +24,7 @@ import (
 	"github.com/junfuchang/superflare/internal/footer"
 	"github.com/junfuchang/superflare/internal/i18n"
 	"github.com/junfuchang/superflare/internal/pool"
+	"github.com/junfuchang/superflare/internal/seo"
 	"github.com/junfuchang/superflare/internal/statuspage"
 )
 
@@ -199,9 +200,15 @@ syncModal();
 
 var cryptoRandRead = rand.Read
 
-func setCSPHeader(c *echo.Context, scriptNonce string) {
+func setCSPHeader(c *echo.Context, scriptNonce string, customScripts ...bool) {
 	if !currentHomeRuntime().DisableCSP {
-		c.Response().Header().Set("Content-Security-Policy", getCSPValue(scriptNonce))
+		policy := getCSPValue(scriptNonce)
+		if len(customScripts) > 0 && customScripts[0] {
+			// Analytics loaders create child scripts and assign their URLs.
+			// Trust nonce-authorized loaders without requiring Trusted Types.
+			policy = "script-src 'nonce-" + scriptNonce + "' 'strict-dynamic'; object-src 'none'; base-uri 'none';"
+		}
+		c.Response().Header().Set("Content-Security-Policy", policy)
 	}
 }
 
@@ -514,11 +521,11 @@ func renderHelp(c *echo.Context) error {
 	if styleWarning != "" {
 		renderWarnings = append(renderWarnings, styleWarning)
 	}
-	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options))
+	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || hasCustomScripts(options))
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
-	setCSPHeader(c, scriptNonce)
+	setCSPHeader(c, scriptNonce, hasCustomScripts(options))
 	bodyClassName := getBodyClassName(options)
 	m := pool.GetTemplateMap()
 	defer pool.PutTemplateMap(m)
@@ -565,9 +572,11 @@ func renderHelp(c *echo.Context) error {
 	m["RenderWarnings"] = renderWarnings
 	m["HasRenderWarnings"] = len(renderWarnings) > 0
 	m["ScriptNonce"] = scriptNonce
+	m["CustomScripts"] = renderCustomScripts(options.CustomScripts, scriptNonce)
 	m["InlineClockScript"] = template.JS(_inlineClockScript)
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
+	bindSEOData(m, options, c.Request(), seo.PageHelp, nil, false)
 	return c.Render(http.StatusOK, "home.html", m)
 }
 
@@ -665,11 +674,11 @@ func pageBookmark(c *echo.Context) error {
 	}
 	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, false, nil, options.ShowBookmarks, bookmarkModules.items, renderWarnings)
 	hasBookmarkDescriptions := options.ShowBookmarks && bookmarkModules.BookmarksHaveDescriptions
-	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || hasBookmarkDescriptions)
+	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || hasBookmarkDescriptions || hasCustomScripts(options))
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
-	setCSPHeader(c, scriptNonce)
+	setCSPHeader(c, scriptNonce, hasCustomScripts(options))
 	bodyClassName := getBodyClassName(options)
 	m := pool.GetTemplateMap()
 	defer pool.PutTemplateMap(m)
@@ -708,9 +717,11 @@ func pageBookmark(c *echo.Context) error {
 	m["RenderWarnings"] = renderWarnings
 	m["HasRenderWarnings"] = len(renderWarnings) > 0
 	m["ScriptNonce"] = scriptNonce
+	m["CustomScripts"] = renderCustomScripts(options.CustomScripts, scriptNonce)
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	m["InlineBookmarkTooltipScript"] = inlineBookmarkTooltipScript(hasBookmarkDescriptions)
+	bindSEOData(m, options, c.Request(), seo.PageBookmarks, bookmarkModules.items, false)
 	return c.Render(http.StatusOK, "home.html", m)
 }
 
@@ -744,11 +755,11 @@ func pageApplication(c *echo.Context) error {
 		}
 	}
 	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, options.ShowApps, applications.items, false, nil, renderWarnings)
-	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || (options.ShowApps && applications.HasDirectories))
+	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || (options.ShowApps && applications.HasDirectories) || hasCustomScripts(options))
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
-	setCSPHeader(c, scriptNonce)
+	setCSPHeader(c, scriptNonce, hasCustomScripts(options))
 	bodyClassName := getBodyClassName(options)
 	m := pool.GetTemplateMap()
 	defer pool.PutTemplateMap(m)
@@ -783,8 +794,10 @@ func pageApplication(c *echo.Context) error {
 	m["RenderWarnings"] = renderWarnings
 	m["HasRenderWarnings"] = len(renderWarnings) > 0
 	m["ScriptNonce"] = scriptNonce
+	m["CustomScripts"] = renderCustomScripts(options.CustomScripts, scriptNonce)
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
+	bindSEOData(m, options, c.Request(), seo.PageApplications, applications.items, false)
 	return c.Render(http.StatusOK, "home.html", m)
 }
 
@@ -837,11 +850,11 @@ func render(c *echo.Context, filter string) error {
 		showBookmarkWarnings = bookmarkModules.HasFavorites
 	}
 	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, options.ShowApps, applications.items, showBookmarkWarnings, bookmarkWarningItems, renderWarnings)
-	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || bookmarkModules.HasDescriptions || (options.ShowApps && applications.HasDirectories))
+	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || bookmarkModules.HasDescriptions || (options.ShowApps && applications.HasDirectories) || hasCustomScripts(options))
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
-	setCSPHeader(c, scriptNonce)
+	setCSPHeader(c, scriptNonce, hasCustomScripts(options))
 	bodyClassName := getBodyClassName(options)
 	m := pool.GetTemplateMap()
 	defer pool.PutTemplateMap(m)
@@ -899,15 +912,65 @@ func render(c *echo.Context, filter string) error {
 	m["RenderWarnings"] = renderWarnings
 	m["HasRenderWarnings"] = len(renderWarnings) > 0
 	m["ScriptNonce"] = scriptNonce
+	m["CustomScripts"] = renderCustomScripts(options.CustomScripts, scriptNonce)
 	m["InlineClockScript"] = template.JS(_inlineClockScript)
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	m["InlineBookmarkTooltipScript"] = inlineBookmarkTooltipScript(bookmarkModules.HasDescriptions)
+	// A search result page is a thin duplicate of the home page: keep it out of
+	// the index so crawlers do not treat ?q-style permutations as content.
+	bindSEOData(m, options, c.Request(), seo.PageHome, homeSEOItems(applications.items, bookmarkModules.items), hasKeyword)
 	return c.Render(http.StatusOK, "home.html", m)
+}
+
+// homeSEOItems merges the app and bookmark lists shown on the home page into one
+// curated list for structured data. The rendering order matches the page.
+func homeSEOItems(appItems, bookmarkItems []model.Bookmark) []model.Bookmark {
+	merged := make([]model.Bookmark, 0, min(len(appItems), seoItemLimit))
+	for _, group := range [][]model.Bookmark{appItems, bookmarkItems} {
+		for _, item := range group {
+			if len(merged) >= seoItemLimit {
+				return merged
+			}
+			merged = append(merged, item)
+		}
+	}
+	return merged
 }
 
 func shouldUseExternalSearch(options model.Application) bool {
 	return strings.EqualFold(strings.TrimSpace(options.SearchMode), "engine")
+}
+
+// seoItemLimit caps how many entries are mirrored into structured data and the
+// page's ItemList. A start page can list hundreds of bookmarks; keeping the
+// markup bounded protects the rendered HTML size and keeps the JSON-LD a
+// curatable summary rather than a full dump.
+const seoItemLimit = 60
+
+// bindSEOData resolves the SEO head block for a rendered page and merges it into
+// the template map. Every page goes through here so titles, canonical URLs,
+// robots directives and structured data stay consistent.
+func bindSEOData(m map[string]any, options model.Application, request *http.Request, kind seo.PageKind, items []model.Bookmark, noIndex bool) {
+	input := seo.PageOptions(options, request, kind)
+	input.NoIndex = noIndex
+	input.Items = seoLinks(items)
+	seo.BuildTemplateData(m, input)
+}
+
+// seoLinks converts visible bookmark entries into structured-data links.
+func seoLinks(items []model.Bookmark) []seo.Link {
+	links := make([]seo.Link, 0, min(len(items), seoItemLimit))
+	for _, item := range items {
+		if len(links) >= seoItemLimit {
+			break
+		}
+		if item.Private {
+			continue
+		}
+		links = append(links, seo.Link{Name: item.Name, URL: item.URL, Description: item.Desc})
+	}
+	return links
 }
 
 func buildSearchPlaceholder(options model.Application, locale string) string {

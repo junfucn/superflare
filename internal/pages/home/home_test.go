@@ -1566,8 +1566,8 @@ func TestInlineSiteIconRefreshScriptStartsAfterPageLoad(t *testing.T) {
 			t.Fatalf("favicon refresh must stay outside the initial page load, missing %q", expected)
 		}
 	}
-	if got := strings.Count(script, "setTimeout"); got != 1 {
-		t.Fatalf("favicon refresh should use one deferred start without polling, got %d timers", got)
+	if got := strings.Count(script, "setTimeout"); got != 2 {
+		t.Fatalf("favicon refresh should use one deferred start and one idle fallback without polling, got %d timers", got)
 	}
 }
 
@@ -1592,10 +1592,10 @@ func TestInlineSiteIconRefreshScriptStreamsEachCompletedIcon(t *testing.T) {
 		`var chunk=await reader.read()`,
 		`lines.forEach(applyRecord)`,
 		`pending.delete(record.source)`,
-		`pending.delete(record.source);recovery.push(loadDirect(item.group,item.src));return;`,
+		`pending.delete(record.source);recovery.push(loadDirect(item.group,item.src,background));return;`,
 		`displayIcon(item.group,item.src,new Blob(`,
 		`streaming.slice(offset,offset+128)`,
-		`pending.forEach(function(item){recovery.push(loadDirect(item.group,item.src));})`,
+		`pending.forEach(function(item){recovery.push(loadDirect(item.group,item.src,background));})`,
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("favicon script is missing incremental streaming behavior %q", expected)
@@ -1608,7 +1608,7 @@ func TestInlineSiteIconRefreshScriptStreamsEachCompletedIcon(t *testing.T) {
 	}
 }
 
-func TestInlineSiteIconRefreshScriptLoadsOnlyVisibleIcons(t *testing.T) {
+func TestInlineSiteIconRefreshScriptPrioritizesVisibleIconsBeforeSubmenuPrefetch(t *testing.T) {
 	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
 	for _, expected := range []string{
 		`new window.IntersectionObserver`,
@@ -1620,9 +1620,14 @@ func TestInlineSiteIconRefreshScriptLoadsOnlyVisibleIcons(t *testing.T) {
 		`requestController.abort()`,
 		`return Promise.all(requests);`,
 		`return Promise.all(recovery);`,
+		`loadGroups(entries).then(finishForeground,finishForeground)`,
+		`window.requestIdleCallback(run,{timeout:1000})`,
+		`entries.length>=4`,
+		`loadGroups(entries,true).then(finish,finish)`,
+		`img.fetchPriority="low";img.loading="eager";`,
 	} {
 		if !strings.Contains(script, expected) {
-			t.Fatalf("favicon script is missing on-demand loading behavior %q", expected)
+			t.Fatalf("favicon script is missing prioritized loading behavior %q", expected)
 		}
 	}
 }

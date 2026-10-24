@@ -138,7 +138,24 @@ func versionedIconURL(routePath string, assetPath string) string {
 	return routePath + "?v=" + version
 }
 
+// embeddedAssetVersions memoizes the content hash of embedded assets. The
+// embedded filesystem is immutable for the lifetime of the process, so the
+// version of an asset can never change at runtime. Caching the result keeps
+// template helpers such as SiteIconURL from re-reading and re-hashing the same
+// files on every page render.
+var embeddedAssetVersions sync.Map
+
 func embeddedAssetVersion(assetPath string) string {
+	if cached, ok := embeddedAssetVersions.Load(assetPath); ok {
+		version, _ := cached.(string)
+		return version
+	}
+	version := computeEmbeddedAssetVersion(assetPath)
+	embeddedAssetVersions.Store(assetPath, version)
+	return version
+}
+
+func computeEmbeddedAssetVersion(assetPath string) string {
 	data, err := fs.ReadFile(Favicon, assetPath)
 	if err != nil || len(data) == 0 {
 		return ""

@@ -149,6 +149,8 @@ func ensureGeneratedTemplatesAreFresh() error {
 		"settings-others.html",
 		"settings-ports.html",
 		"settings-search.html",
+		"settings-scripts.html",
+		"settings-seo.html",
 		"settings-sidebar.html",
 		"settings-theme.html",
 	} {

@@ -9,6 +9,7 @@ SuperFlare 是一个轻量级、自托管的导航首页，基于 [soulteary/doc
 - 提供搜索、主题与背景等外观设置、多语言界面、在线编辑，以及配置备份和恢复。
 - 可检查公开链接、发现本机端口并在端口页查看结果，便于整理服务入口。
 - 站点图标支持显式图标、站点 favicon 和内置图标回退；外部图标请求可能因网络或目标站点限制失败，失败时会回退到可用的内置图标。
+- 内置面向搜索引擎与 AI 的发现能力：可配置站点地址、描述、关键词与分享图，自动输出 canonical、Open Graph、Twitter Card、JSON-LD 结构化数据，并提供 `/robots.txt`、`/sitemap.xml`、`/llms.txt`。
 
 ## 部署方式
 
@@ -42,10 +43,36 @@ http://127.0.0.1:3636/
 默认用户名和密码均为 `admin` / `admin`，首次登录后应立即修改。生产环境请配置稳定且足够随机的 `FLARE_COOKIE_SECRET`，避免重启、容器重建或密钥变更导致会话失效。
 
 - `/settings`：登录、外观、搜索和其他设置。
+- `/settings/seo`：站点地址、描述、关键词、分享图与搜索引擎索引开关。
+- `/settings/scripts`：添加 Google Analytics、百度统计等自定义脚本。
 - `/editor`：在线编辑应用、书签与配置。
 - `/settings/ports`：查看端口发现结果。
 
 修改用户名或密码会使当前会话失效，需要使用新凭据重新登录。禁用登录模式被视为受信任访问，私有项目仍会显示；请只在可信网络中关闭登录。
+
+## 自定义脚本
+
+在“设置 → 脚本”中粘贴统计平台提供的完整代码（包含 `<script>` 标签），可同时添加多段脚本。保存后立即生效，代码保存在 `config.yml` 的 `CustomScripts` 字段中；清空后保存即可停用。
+
+脚本会插入首页、应用、书签、帮助及站内搜索结果页面的 `<head>`，设置和编辑页面不会加载。系统自动为脚本添加当前页面的 CSP nonce，并允许受信任脚本加载其依赖，无需关闭 CSP。自定义脚本可以访问访客页面数据，请仅添加可信来源的代码。
+
+## SEO 与 AI 可发现性
+
+`/settings/seo` 中的设置会同时作用于页面头和公开发现文件：
+
+- 站点地址（`SiteURL`）：用于生成 canonical、Open Graph `og:url` 与 sitemap 的绝对地址。反向代理部署时建议显式填写，否则按请求的 `X-Forwarded-Proto` / `Host` 推断。
+- 描述、关键词、作者与分享图：留空时使用按页面类型区分的内置中英文文案。
+- 索引开关（`SEONoIndex`）：开启后所有页面输出 `noindex, nofollow`，`robots.txt` 直接 `Disallow: /`。
+
+默认输出的发现文件：
+
+| 路径 | 内容 |
+| --- | --- |
+| `/robots.txt` | 放行公开页面、屏蔽 `/settings`、`/editor` 等管理路径，并让训练型爬虫（GPTBot、ClaudeBot、CCBot 等）退出抓取 |
+| `/sitemap.xml` | 首页、应用、书签、帮助四个公开页面 |
+| `/llms.txt` | 面向大模型的站点摘要与页面索引（不会列出私有书签） |
+
+页面还会输出 `WebSite`、`Organization`、`SoftwareApplication`、`WebPage`、`BreadcrumbList`、`ItemList` 组成的 JSON-LD，使不执行 JavaScript 的抓取端也能理解页面内容。当 `FLARE_VISIBILITY=PRIVATE` 或登录被禁用时，应用与书签页不进入 sitemap，且整站按 `noindex` 处理。
 
 ## 运行数据与升级
 
