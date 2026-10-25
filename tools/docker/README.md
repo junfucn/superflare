@@ -103,6 +103,58 @@ docker push junfucn/superflare:latest
 
 如果服务器能连 Docker Hub 但连不上 Go 代理，也可以在能联网的机器上导出 module 缓存，再用 `RUN --mount=type=cache,target=/go/pkg/mod` 或 `COPY` 把它带进 builder 阶段。本仓库默认的 `Dockerfile` 走线上 `go mod download`，未启用缓存挂载。
 
+## 通过 HTTP 代理构建
+
+构建过程有**两个**独立的网络出口，代理要分别配，只配一个必然还有一半失败：
+
+| 出口 | 由谁发起 | 怎么配 |
+|---|---|---|
+| 拉取基础镜像元数据、推送镜像 | builder 里的 `buildkitd` | `docker buildx create --driver-opt env.HTTPS_PROXY=...` |
+| `RUN` 里的 `apk add`、`go mod download` | 构建出来的临时容器 | `--build-arg HTTPS_PROXY=...` |
+
+第二项构建脚本会自动处理：读取宿主机上的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`（大小写都认），自动转成 `--build-arg` 传给容器，无需手写参数：
+
+```bash
+HTTPS_PROXY=http://192.168.1.10:7890 \
+PLATFORMS=linux/amd64,linux/arm64 PUSH=1 \
+  ./tools/docker/build-image.sh junfucn/superflare latest
+```
+
+命令行只写大写形式即可，脚本会同时下发 `HTTPS_PROXY` 和 `https_proxy`（Go 工具链、apk、curl 认的名字不一致）。带密码的代理地址在日志中会打码成 `http://user:***@host:port`，安全的。
+
+第一项必须在创建 builder 时注入，**建好之后改不了**，要 `docker buildx rm` 重建：
+
+```bash
+docker buildx create --name docker-builder \
+  --driver docker-container \
+  --driver-opt env.HTTP_PROXY=http://192.168.1.10:7890 \
+  --driver-opt env.HTTPS_PROXY=http://192.168.1.10:7890 \
+  --driver-opt env.NO_PROXY=localhost,127.0.0.1,10.0.0.0/8 \
+  --use --bootstrap
+```
+
+如果代理就跑在**宿主机的 127.0.0.1**（Clash、v2ray 之类），builder 容器里的 `127.0.0.1` 指向容器自己，必须再加 host 网络：
+
+```bash
+docker buildx create --name docker-builder \
+  --driver docker-container \
+  --driver-opt network=host \
+  --driver-opt env.HTTPS_PROXY=http://127.0.0.1:7890 \
+  --driver-opt env.HTTP_PROXY=http://127.0.0.1:7890 \
+  --use --bootstrap
+```
+
+脚本检测到代理指向 `127.0.0.1` / `localhost` 时会打印提醒，但不会擅自改写地址（代理也可能真的运行在容器内）。
+
+自检代理是否可用（`401` 说明 Docker Hub 可达，属于正常响应）：
+
+```bash
+env HTTPS_PROXY=http://192.168.1.10:7890 \
+  curl -sS -m 10 -o /dev/null -w '%{http_code}\n' https://registry-1.docker.io/v2/
+```
+
+> 注意：`PUSH=1` 的推送也是由 builder 里的 `buildkitd` 发起的，所以第一项（builder 代理）若没配好，镜像就算构建成功也推不上去。
+
 ## 推送到 Docker Hub
 
 先登录 Docker Hub（推送需要 `registry-1.docker.io` 可达）：
