@@ -1,0 +1,33 @@
+# Keep the build context small and reproducible for direct `docker build` use.
+# The supported path (tools/docker/build-image.sh) already copies only the
+# required files into a temporary context, so this file mainly protects people
+# who build straight from the repository root.
+#
+# Patterns are anchored with a leading slash so they only match top-level paths;
+# otherwise a bare name like `var` could also drop `internal/var` and break the
+# build.
+
+/.git
+/.github
+/.tools
+/coverage
+/docs
+/fnapp
+/tmp
+/tmp-*
+/var
+/dist
+/out
+*.tar
+*.tar.gz
+*.fpk
+*.log
+*.exe
+/.env
+/.superflare-config.lock
+/apps.yml
+/bookmarks.yml
+/config.yml
+/ports.yaml
+/tools/docker/*.ps1
+/tools/docker/README.md

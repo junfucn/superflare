@@ -6,12 +6,39 @@ FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
+# 构建容器有独立的网络环境，不会继承宿主机的 GOPROXY / GOFLAGS 等配置。
+# 默认使用可访问性较好的代理，按需通过 --build-arg 覆盖，例如：
+#   --build-arg GOPROXY=https://goproxy.cn,direct
+#   --build-arg GOPROXY=off --build-arg GOSUMDB=off   # 完全离线/内网私服
+ARG GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
+ARG GOSUMDB=sum.golang.org
+ARG GOTOOLCHAIN=local
+ARG MOD_DOWNLOAD_RETRIES=3
+
+ENV GOPROXY=${GOPROXY} \
+    GOSUMDB=${GOSUMDB} \
+    GOTOOLCHAIN=${GOTOOLCHAIN}
+
 WORKDIR /src
 
 RUN apk add --no-cache ca-certificates git
 
 COPY go.mod go.sum ./
-RUN go mod download
+
+# 代理不可用时明确报错并重试，避免只看到 150s 的 i/o timeout。
+RUN set -eux; \
+    attempt=1; \
+    while ! go mod download; do \
+        if [ "$attempt" -ge "${MOD_DOWNLOAD_RETRIES}" ]; then \
+            echo "go mod download failed after ${attempt} attempt(s)." >&2; \
+            echo "The build container cannot reach the Go module proxy." >&2; \
+            echo "Retry with: --build-arg GOPROXY=<mirror>,direct (and GOSUMDB=off if that mirror cannot reach sum.golang.org)." >&2; \
+            exit 1; \
+        fi; \
+        attempt=$((attempt + 1)); \
+        echo "go mod download failed, retrying (${attempt}/${MOD_DOWNLOAD_RETRIES}) ..." >&2; \
+        sleep 5; \
+    done
 
 COPY build ./build
 COPY cmd ./cmd

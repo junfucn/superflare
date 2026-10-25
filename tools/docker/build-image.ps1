@@ -2,7 +2,10 @@ param(
     [string]$ImageName = "superflare",
     [string]$Tag = "latest",
     [string]$Platform = "",
-    [switch]$NoCache
+    [switch]$NoCache,
+    [switch]$Push,
+    [string]$GoProxy = "https://goproxy.cn,https://proxy.golang.org,direct",
+    [string]$GoSumDB = "sum.golang.org"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,22 +52,45 @@ try {
     }
 
     $dockerfile = Join-Path $tempRoot "tools\docker\Dockerfile"
-    $args = @(
-        "build",
-        "--file", $dockerfile,
-        "--tag", $imageRef
-    )
 
-    if ($Platform -ne "") {
-        $args += @("--platform", $Platform)
+    if ($Push) {
+        $args = @(
+            "buildx", "build",
+            "--file", $dockerfile,
+            "--tag", $imageRef,
+            "--platform", $(if ($Platform -ne "") { $Platform } else { "linux/amd64" }),
+            "--build-arg", "GOPROXY=$GoProxy",
+            "--build-arg", "GOSUMDB=$GoSumDB",
+            "--push"
+        )
     }
+    else {
+        $args = @(
+            "build",
+            "--file", $dockerfile,
+            "--tag", $imageRef,
+            "--build-arg", "GOPROXY=$GoProxy",
+            "--build-arg", "GOSUMDB=$GoSumDB"
+        )
+
+        if ($Platform -ne "") {
+            $args += @("--platform", $Platform)
+        }
+    }
+
     if ($NoCache) {
         $args += "--no-cache"
     }
 
     $args += $tempRoot
 
-    Write-Host "Building Docker image $imageRef"
+    if ($Push) {
+        Write-Host "Building and pushing Docker image $imageRef"
+    }
+    else {
+        Write-Host "Building Docker image $imageRef"
+    }
+    Write-Host "GOPROXY: $GoProxy"
     if ($Platform -ne "") {
         Write-Host "Platform: $Platform"
     }
