@@ -48,17 +48,21 @@ HomeMaxWidth: 1600
 // personal dashboard: 12 categories and 59 links, none of which configure an
 // explicit icon, so every single one runs the site favicon fallback path.
 func benchmarkBookmarkFixture() string {
+	return benchmarkBookmarkFixtureSize(12, 59)
+}
+
+func benchmarkBookmarkFixtureSize(categories, links int) string {
 	var b strings.Builder
 	b.WriteString("categories:\n")
-	for i := 1; i <= 12; i++ {
+	for i := 1; i <= categories; i++ {
 		fmt.Fprintf(&b, "- id: \"%d\"\n  title: \"Category %d\"\n", i, i)
 	}
 	b.WriteString("links:\n")
-	for i := 0; i < 59; i++ {
+	for i := 0; i < links; i++ {
 		fmt.Fprintf(&b, `- name: "Bookmark %d"
   link: "https://site-%d.example.com/path"
   category: "%d"
-`, i, i, i%12+1)
+`, i, i, i%categories+1)
 	}
 	return b.String()
 }
@@ -126,6 +130,17 @@ func newHomePageBenchRouter(b *testing.B) http.Handler {
 // template rendering.
 func BenchmarkHomePageRender(b *testing.B) {
 	setupHomePageBenchWorkingDir(b)
+	benchmarkHomePageRender(b)
+}
+
+func BenchmarkHomePageRenderLarge(b *testing.B) {
+	setupHomePageBenchWorkingDir(b)
+	require.NoError(b, os.WriteFile("bookmarks.yml", []byte(benchmarkBookmarkFixtureSize(120, 600)), 0o644))
+	benchmarkHomePageRender(b)
+}
+
+func benchmarkHomePageRender(b *testing.B) {
+	b.Helper()
 	handler := newHomePageBenchRouter(b)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

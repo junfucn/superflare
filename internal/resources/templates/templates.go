@@ -20,16 +20,13 @@ import (
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/i18n"
+	"github.com/junfuchang/superflare/internal/pool"
 	"github.com/junfuchang/superflare/internal/resources/assets"
 	"github.com/junfuchang/superflare/internal/resources/mdi"
 )
 
 //go:embed html
 var TPL embed.FS
-
-var bufPool = sync.Pool{
-	New: func() any { return &bytes.Buffer{} },
-}
 
 type templateRuntimeSnapshot struct {
 	DebugMode bool
@@ -91,7 +88,7 @@ type Renderer struct {
 	templates *template.Template
 }
 
-func (r *Renderer) Render(c *echo.Context, w io.Writer, templateName string, data any) error {
+func (r *Renderer) execute(w io.Writer, templateName string, data any) error {
 	tmplName := templateName
 	for _, cand := range []string{templateName, "html/" + templateName, "embed/templates/" + templateName} {
 		if r.templates.Lookup(cand) != nil {
@@ -99,17 +96,39 @@ func (r *Renderer) Render(c *echo.Context, w io.Writer, templateName string, dat
 			break
 		}
 	}
-	buf, ok := bufPool.Get().(*bytes.Buffer)
-	if !ok || buf == nil {
-		buf = &bytes.Buffer{}
-	}
-	buf.Reset()
-	defer bufPool.Put(buf)
-	if err := r.templates.ExecuteTemplate(buf, tmplName, data); err != nil {
+	return r.templates.ExecuteTemplate(w, tmplName, data)
+}
+
+func (r *Renderer) Render(c *echo.Context, w io.Writer, templateName string, data any) error {
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	if err := r.execute(buf, templateName, data); err != nil {
 		return err
 	}
 	_, err := buf.WriteTo(w)
 	return err
+}
+
+// Render buffers the response once and reuses its storage across requests.
+// Like echo.Context.Render, it does not commit a response until rendering
+// succeeds, so the error handler can still send the appropriate status page.
+func Render(c *echo.Context, code int, name string, data any) error {
+	renderer := c.Echo().Renderer
+	if renderer == nil {
+		return echo.ErrRendererNotRegistered
+	}
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	var err error
+	if r, ok := renderer.(*Renderer); ok {
+		err = r.execute(buf, name, data)
+	} else {
+		err = renderer.Render(c, buf, name, data)
+	}
+	if err != nil {
+		return err
+	}
+	return c.HTMLBlob(code, buf.Bytes())
 }
 
 var templateFuncMap = template.FuncMap{

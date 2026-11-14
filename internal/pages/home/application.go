@@ -1,20 +1,17 @@
 package home
 
 import (
+	"bytes"
 	"html/template"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/fn"
+	"github.com/junfuchang/superflare/internal/pool"
 	"github.com/junfuchang/superflare/internal/resources/mdi"
 )
-
-var builderPool = sync.Pool{
-	New: func() any { return &strings.Builder{} },
-}
 
 type applicationProjection struct {
 	HTML           template.HTML
@@ -54,12 +51,8 @@ func generateApplicationProjectionWithLocalAndURLErr(filter string, options *mod
 	if err != nil {
 		return applicationProjection{}, err
 	}
-	b, ok := builderPool.Get().(*strings.Builder)
-	if !ok {
-		b = &strings.Builder{}
-	}
-	b.Reset()
-	defer builderPool.Put(b)
+	b := pool.GetBuffer()
+	defer pool.PutBuffer(b)
 
 	filterLower := strings.ToLower(filter)
 	apps := make([]model.Bookmark, 0, len(appsData.Items))
@@ -111,10 +104,11 @@ func generateApplicationProjectionWithLocalAndURLErr(filter string, options *mod
 		return directories[i].SourceIndex < directories[j].SourceIndex
 	})
 
-	var modals strings.Builder
+	modals := pool.GetBuffer()
+	defer pool.PutBuffer(modals)
 	for index, directory := range directories {
 		renderApplicationDirectory(b, directory, index)
-		renderApplicationDirectoryModal(&modals, directory, index, options, preferLocal, requestURL)
+		renderApplicationDirectoryModal(modals, directory, index, options, preferLocal, requestURL)
 	}
 	for _, app := range ungrouped {
 		renderApplicationItem(b, app, options, preferLocal, requestURL)
@@ -128,7 +122,7 @@ func generateApplicationProjectionWithLocalAndURLErr(filter string, options *mod
 	}, nil
 }
 
-func renderApplicationDirectory(b *strings.Builder, directory applicationDirectory, index int) {
+func renderApplicationDirectory(b *bytes.Buffer, directory applicationDirectory, index int) {
 	modalID := "application-subdir-modal-" + strconv.Itoa(index)
 	escapedModalID := template.HTMLEscapeString(modalID)
 	escapedName := template.HTMLEscapeString(directory.Name)
@@ -148,7 +142,7 @@ func renderApplicationDirectory(b *strings.Builder, directory applicationDirecto
 	b.WriteString(`</p></div></a></div>`)
 }
 
-func renderApplicationDirectoryModal(b *strings.Builder, directory applicationDirectory, index int, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderApplicationDirectoryModal(b *bytes.Buffer, directory applicationDirectory, index int, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
 	indexString := strconv.Itoa(index)
 	modalID := template.HTMLEscapeString("application-subdir-modal-" + indexString)
 	titleID := template.HTMLEscapeString("application-subdir-title-" + indexString)
@@ -169,7 +163,7 @@ func renderApplicationDirectoryModal(b *strings.Builder, directory applicationDi
 	b.WriteString(`</div></div></div>`)
 }
 
-func renderApplicationItem(b *strings.Builder, app model.Bookmark, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderApplicationItem(b *bytes.Buffer, app model.Bookmark, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
 	desc := app.Desc
 	if desc == "" {
 		desc = app.URL

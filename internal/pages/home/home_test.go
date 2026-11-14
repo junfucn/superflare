@@ -1,6 +1,7 @@
 package home
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -3221,7 +3222,7 @@ func TestRenderBookmarkIconFallsBackToBuiltinBookmarkWhenFaviconMissing(t *testi
 }
 
 func TestRenderBookmarkItemUsesDedicatedLabelSpan(t *testing.T) {
-	var b strings.Builder
+	var b bytes.Buffer
 
 	renderBookmarkItem(&b, model.Bookmark{
 		Name: "Example",
@@ -3236,7 +3237,7 @@ func TestRenderBookmarkItemUsesDedicatedLabelSpan(t *testing.T) {
 }
 
 func TestBookmarkTooltipDescriptionAttributeEscapesAndTrims(t *testing.T) {
-	var b strings.Builder
+	var b bytes.Buffer
 
 	renderBookmarkItem(&b, model.Bookmark{
 		Name: "Example",
@@ -3257,7 +3258,7 @@ func TestBookmarkTooltipDescriptionAttributeEscapesAndTrims(t *testing.T) {
 }
 
 func TestBookmarkTooltipDescriptionAttributeOmittedWhenBlank(t *testing.T) {
-	var b strings.Builder
+	var b bytes.Buffer
 	renderBookmarkItem(&b, model.Bookmark{
 		Name: "Example",
 		URL:  "https://example.com",

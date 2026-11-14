@@ -47,6 +47,7 @@ const (
 	siteIconHostedTimeout      = 6 * time.Second
 	siteIconFailureTTL         = 5 * time.Minute
 	siteIconFailureMaxEntries  = 1024
+	siteIconFailureKeyMaxBytes = 256
 	siteIconMissingTTL         = 45 * time.Second
 	siteIconSourceCacheLimit   = 4096
 	siteIconMemoryTTL          = 10 * time.Minute
@@ -173,15 +174,31 @@ type siteIconMemoryCache struct {
 func (c *siteIconMemoryCache) Load(key string, now time.Time) ([]byte, string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entry, ok := c.entries[key]
+	entry, ok := c.entryLocked(key, now)
 	if !ok {
 		return nil, "", false
 	}
+	return append([]byte(nil), entry.data...), entry.contentType, true
+}
+
+// Contains checks availability without copying the image into a page render.
+func (c *siteIconMemoryCache) Contains(key string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.entryLocked(key, now)
+	return ok
+}
+
+func (c *siteIconMemoryCache) entryLocked(key string, now time.Time) (siteIconMemoryEntry, bool) {
+	entry, ok := c.entries[key]
+	if !ok {
+		return siteIconMemoryEntry{}, false
+	}
 	if !now.Before(entry.expires) {
 		c.removeLocked(key)
-		return nil, "", false
+		return siteIconMemoryEntry{}, false
 	}
-	return append([]byte(nil), entry.data...), entry.contentType, true
+	return entry, true
 }
 
 func (c *siteIconMemoryCache) Store(key string, data []byte, contentType string, now time.Time) {
@@ -383,7 +400,7 @@ func hasValidatedSiteFaviconFast(iconURL string) bool {
 	// Icons served from the memory fallback are already validated by the
 	// download path, and their cache file may not exist at all (unwritable
 	// cache directory), so the stat-based checks below cannot see them.
-	if _, _, ok := siteIconMemory.Load(iconURL, time.Now()); ok {
+	if siteIconMemory.Contains(iconURL, time.Now()) {
 		return true
 	}
 	cachePath, err := siteFaviconCachePath(iconURL)
@@ -725,16 +742,26 @@ func FetchPublicSiteFaviconContext(ctx context.Context, iconURL string) ([]byte,
 }
 
 func siteFaviconFailureActive(iconURL string) bool {
-	key := siteFaviconCacheKey(iconURL)
-	return siteIconFailures.Active(key, time.Now())
+	return siteIconFailures.Active(siteFaviconFailureKey(iconURL), time.Now())
 }
 
 func recordSiteFaviconFailure(iconURL string) {
-	siteIconFailures.Store(siteFaviconCacheKey(iconURL), time.Now().Add(siteIconFailureTTL))
+	// Clone so a trimmed URL does not retain a larger request string.
+	siteIconFailures.Store(strings.Clone(siteFaviconFailureKey(iconURL)), time.Now().Add(siteIconFailureTTL))
 }
 
 func clearSiteFaviconFailure(iconURL string) {
-	siteIconFailures.Delete(siteFaviconCacheKey(iconURL))
+	siteIconFailures.Delete(siteFaviconFailureKey(iconURL))
+}
+
+func siteFaviconFailureKey(iconURL string) string {
+	iconURL = strings.TrimSpace(iconURL)
+	// Avoid hashing each bookmark during rendering. Long request URLs still
+	// use bounded keys so the failure cache cannot retain oversized strings.
+	if len(iconURL) > siteIconFailureKeyMaxBytes {
+		return siteFaviconCacheKey(iconURL)
+	}
+	return iconURL
 }
 
 func fetchAndCacheSiteFavicon(ctx context.Context, iconURL string) ([]byte, string, error) {

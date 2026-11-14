@@ -220,9 +220,8 @@ func TestGetSiteFaviconAssetURLDoesNotStartDuplicateBackgroundFetch(t *testing.T
 func TestGetSiteFaviconAssetURLReturnsEmptyDuringFailureCooldown(t *testing.T) {
 	bookmarkLink := "https://no-icon.test-domain.com/path"
 	iconURL := GetSiteFaviconURL(bookmarkLink)
-	key := siteFaviconCacheKey(iconURL)
-	siteIconFailures.Store(key, time.Now().Add(time.Minute))
-	defer siteIconFailures.Delete(key)
+	recordSiteFaviconFailure(iconURL)
+	defer clearSiteFaviconFailure(iconURL)
 
 	if got := GetSiteFaviconAssetURL(bookmarkLink); got != "" {
 		t.Fatalf("active failure should retain plain built-in bookmark icon, got %q", got)
@@ -2121,8 +2120,7 @@ func TestFetchPublicSiteFaviconUsesBuiltinFallbackWhenAllSourcesUnavailable(t *t
 func TestFetchPublicSiteFaviconSuppressesImmediateRetryAfterFailure(t *testing.T) {
 	withSiteIconTempWorkingDir(t)
 	iconURL := "https://cooldown.test-domain.com/favicon.ico"
-	key := siteFaviconCacheKey(iconURL)
-	defer siteIconFailures.Delete(key)
+	defer clearSiteFaviconFailure(iconURL)
 
 	oldClient := siteIconHTTPClient
 	defer func() { siteIconHTTPClient = oldClient }()
@@ -2152,7 +2150,7 @@ func TestFetchPublicSiteFaviconRechecksCooldownAfterClaimingInflight(t *testing.
 	withSiteIconTempWorkingDir(t)
 	iconURL := "https://concurrent-cooldown.test-domain.com/favicon.ico"
 	key := siteFaviconCacheKey(iconURL)
-	defer siteIconFailures.Delete(key)
+	defer clearSiteFaviconFailure(iconURL)
 	defer siteIconInflight.Delete(key)
 
 	for index := 0; index < cap(siteIconFetchLimiter); index++ {
@@ -2202,7 +2200,7 @@ func TestFetchPublicSiteFaviconRechecksCooldownAfterClaimingInflight(t *testing.
 		time.Sleep(time.Millisecond)
 	}
 
-	siteIconFailures.Store(key, time.Now().Add(time.Minute))
+	recordSiteFaviconFailure(iconURL)
 	releaseFetchSlots()
 	if err := <-result; !errors.Is(err, errSiteFaviconRetryCooldown) {
 		t.Fatalf("claimed request should honor a newly active cooldown, got %v", err)
@@ -2226,9 +2224,8 @@ func TestSiteIconFailureCacheBoundsUniqueEntries(t *testing.T) {
 func TestExpiredSiteFaviconFailureAllowsRetry(t *testing.T) {
 	withSiteIconTempWorkingDir(t)
 	iconURL := "https://retry.test-domain.com/favicon.ico"
-	key := siteFaviconCacheKey(iconURL)
-	siteIconFailures.Store(key, time.Now().Add(-time.Second))
-	defer siteIconFailures.Delete(key)
+	siteIconFailures.Store(iconURL, time.Now().Add(-time.Second))
+	defer clearSiteFaviconFailure(iconURL)
 
 	oldClient := siteIconHTTPClient
 	defer func() { siteIconHTTPClient = oldClient }()

@@ -14,7 +14,7 @@ func TestFetchPublicSiteFaviconServesIconWhenCacheWriteFails(t *testing.T) {
 	withSiteIconTempWorkingDir(t)
 
 	iconURL := "https://unwritable-cache.example.com/favicon.ico"
-	siteIconFailures.Delete(siteFaviconCacheKey(iconURL))
+	clearSiteFaviconFailure(iconURL)
 	siteIconMemory.Delete(iconURL)
 	defer siteIconMemory.Delete(iconURL)
 
@@ -92,6 +92,51 @@ func TestSiteIconMemoryCacheExpires(t *testing.T) {
 	}
 	if _, _, ok := cache.Load(key, start.Add(siteIconMemoryTTL)); ok {
 		t.Fatal("expired entry should not be served")
+	}
+}
+
+func TestSiteIconMemoryContainsHonorsExpiryAndPreservesLoadIsolation(t *testing.T) {
+	var cache siteIconMemoryCache
+	now := time.Now()
+	const key = "https://contains.example.com/favicon.ico"
+	if cache.Contains(key, now) {
+		t.Fatal("missing entry should not be present")
+	}
+	cache.Store(key, []byte("icon"), "image/png", now)
+	if !cache.Contains(key, now.Add(siteIconMemoryTTL-time.Second)) {
+		t.Fatal("unexpired entry should be present")
+	}
+	data, _, _ := cache.Load(key, now)
+	data[0] = 'x'
+	again, _, _ := cache.Load(key, now)
+	if string(again) != "icon" {
+		t.Fatal("loading bytes must not expose the stored image to mutation")
+	}
+	if cache.Contains(key, now.Add(siteIconMemoryTTL)) {
+		t.Fatal("expired entry should not be present")
+	}
+	if cache.Len() != 0 || cache.totalBytes != 0 {
+		t.Fatal("expired image should release its cache entry and byte budget")
+	}
+}
+
+func TestSiteFaviconFailureKeysIgnoreSurroundingWhitespace(t *testing.T) {
+	for _, source := range []string{
+		"https://normalized-failure.example.com/favicon.ico",
+		"https://long-failure.example.com/" + strings.Repeat("path/", 100) + "favicon.ico",
+	} {
+		recordSiteFaviconFailure(" \t" + source + "\n")
+		defer clearSiteFaviconFailure(source)
+		if !siteFaviconFailureActive(source) {
+			t.Fatal("normalized source should share the failure cooldown")
+		}
+		if len(siteFaviconFailureKey(source)) > siteIconFailureKeyMaxBytes {
+			t.Fatal("oversized sources must not grow the failure cache's memory budget")
+		}
+		clearSiteFaviconFailure(" " + source + " ")
+		if siteFaviconFailureActive(source) {
+			t.Fatal("clearing a normalized source should remove its cooldown")
+		}
 	}
 }
 

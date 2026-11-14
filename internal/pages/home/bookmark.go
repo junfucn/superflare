@@ -1,6 +1,7 @@
 package home
 
 import (
+	"bytes"
 	"html/template"
 	"sort"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/fn"
+	"github.com/junfuchang/superflare/internal/pool"
 )
 
 type bookmarkModules struct {
@@ -53,16 +55,12 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 	if err != nil {
 		return bookmarkModules{}, err
 	}
-	b, ok := builderPool.Get().(*strings.Builder)
-	if !ok {
-		b = &strings.Builder{}
-	}
-	b.Reset()
-	defer builderPool.Put(b)
+	b := pool.GetBuffer()
+	defer pool.PutBuffer(b)
 
 	filterLower := strings.ToLower(filter)
 	bookmarks := make([]model.Bookmark, 0, len(bookmarksData.Items))
-	favorites := make([]model.Bookmark, 0, len(bookmarksData.Items))
+	favoriteCount := 0
 	bookmarksHaveDescriptions := false
 	favoritesHaveDescriptions := false
 	for _, bookmark := range bookmarksData.Items {
@@ -81,8 +79,17 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 		hasDescription := strings.TrimSpace(bookmark.Desc) != ""
 		bookmarksHaveDescriptions = bookmarksHaveDescriptions || hasDescription
 		if bookmark.Favorite {
-			favorites = append(favorites, bookmark)
+			favoriteCount++
 			favoritesHaveDescriptions = favoritesHaveDescriptions || hasDescription
+		}
+	}
+	var favorites []model.Bookmark
+	if favoriteCount > 0 {
+		favorites = make([]model.Bookmark, 0, favoriteCount)
+		for _, bookmark := range bookmarks {
+			if bookmark.Favorite {
+				favorites = append(favorites, bookmark)
+			}
 		}
 	}
 	if showFavorites {
@@ -97,26 +104,38 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 	}
 
 	if showBookmarks && len(bookmarksData.Categories) > 0 {
+		// Partition once instead of scanning every bookmark for every category.
+		groups := make(map[string][]model.Bookmark, len(bookmarksData.Categories)+1)
+		for _, category := range bookmarksData.Categories {
+			groups[strings.TrimSpace(category.ID)] = nil
+		}
+		for _, bookmark := range bookmarks {
+			key := strings.TrimSpace(bookmark.Category)
+			if _, known := groups[key]; !known {
+				key = ""
+			}
+			groups[key] = append(groups[key], bookmark)
+		}
 		b.WriteString(`<div class="bookmark-groups">`)
 		for _, category := range bookmarksData.Categories {
-			categoryCopy := category
-			renderBookmarksWithCategories(b, &bookmarks, &categoryCopy, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+			renderBookmarksWithCategories(b, groups[strings.TrimSpace(category.ID)], category, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		}
-		renderUngroupedBookmarks(b, &bookmarks, bookmarksData.Categories, options.Locale, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+		renderUngroupedBookmarks(b, groups[""], options.Locale, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		b.WriteString(`</div>`)
 	} else if showBookmarks {
 		b.WriteString(`<div class="bookmark-groups">`)
-		renderBookmarksWithoutCategories(b, &bookmarks, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+		renderBookmarksWithoutCategories(b, bookmarks, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		b.WriteString(`</div>`)
 	}
 
 	var favoritesHTML template.HTML
 	if showFavorites && len(favorites) > 0 {
-		var favoritesBuilder strings.Builder
+		favoritesBuilder := pool.GetBuffer()
 		favoritesBuilder.WriteString(`<div class="bookmark-groups">`)
-		renderBookmarksWithoutCategories(&favoritesBuilder, &favorites, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+		renderBookmarksWithoutCategories(favoritesBuilder, favorites, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		favoritesBuilder.WriteString(`</div>`)
 		favoritesHTML = template.HTML(favoritesBuilder.String())
+		pool.PutBuffer(favoritesBuilder)
 	}
 	hasDescriptions := (options.ShowBookmarks && bookmarksHaveDescriptions) ||
 		(options.ShowFavorites && len(favorites) > 0 && favoritesHaveDescriptions)
@@ -133,33 +152,27 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 	}, nil
 }
 
-func renderBookmarksWithoutCategories(b *strings.Builder, bookmarks *[]model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderBookmarksWithoutCategories(b *bytes.Buffer, bookmarks []model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
 	b.WriteString(`<div class="bookmark-group-container pull-left"><ul class="bookmark-list">`)
-	for _, bookmark := range *bookmarks {
+	for _, bookmark := range bookmarks {
 		renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
 	}
 	b.WriteString(`</ul></div>`)
 }
 
-func renderBookmarksWithCategories(b *strings.Builder, bookmarks *[]model.Bookmark, category *model.Category, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
-	var itemBuf strings.Builder
+func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, category model.Category, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+	if len(bookmarks) == 0 {
+		return
+	}
 	subdirs := make(map[string][]model.Bookmark)
 	subdirOrder := make([]string, 0)
-	for _, bookmark := range *bookmarks {
-		if strings.TrimSpace(bookmark.Category) != category.ID {
-			continue
-		}
+	for _, bookmark := range bookmarks {
 		if bookmark.Subdir != "" {
 			if _, ok := subdirs[bookmark.Subdir]; !ok {
 				subdirOrder = append(subdirOrder, bookmark.Subdir)
 			}
 			subdirs[bookmark.Subdir] = append(subdirs[bookmark.Subdir], bookmark)
-			continue
 		}
-		renderBookmarkItem(&itemBuf, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
-	}
-	if itemBuf.Len() == 0 && len(subdirOrder) == 0 {
-		return
 	}
 	b.WriteString(`<div class="bookmark-group-container pull-left"><h3 class="bookmark-group-title">`)
 	b.WriteString(template.HTMLEscapeString(category.Name))
@@ -183,32 +196,24 @@ func renderBookmarksWithCategories(b *strings.Builder, bookmarks *[]model.Bookma
 		b.WriteString(`</div>`)
 	}
 	b.WriteString(`<ul class="bookmark-list">`)
-	b.WriteString(itemBuf.String())
+	for _, bookmark := range bookmarks {
+		if bookmark.Subdir == "" {
+			renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
+		}
+	}
 	b.WriteString(`</ul></div>`)
 }
 
-func renderUngroupedBookmarks(b *strings.Builder, bookmarks *[]model.Bookmark, categories []model.Category, locale string, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
-	categorized := make(map[string]struct{}, len(categories))
-	for _, category := range categories {
-		categorized[strings.TrimSpace(category.ID)] = struct{}{}
-	}
-	var itemBuf strings.Builder
-	for _, bookmark := range *bookmarks {
-		if strings.TrimSpace(bookmark.Category) == "" {
-			renderBookmarkItem(&itemBuf, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
-			continue
-		}
-		if _, ok := categorized[strings.TrimSpace(bookmark.Category)]; !ok {
-			renderBookmarkItem(&itemBuf, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
-		}
-	}
-	if itemBuf.Len() == 0 {
+func renderUngroupedBookmarks(b *bytes.Buffer, bookmarks []model.Bookmark, locale string, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+	if len(bookmarks) == 0 {
 		return
 	}
 	b.WriteString(`<div class="bookmark-group-container pull-left"><h3 class="bookmark-group-title">`)
 	b.WriteString(template.HTMLEscapeString(localeUngroupedTitle(locale)))
 	b.WriteString(`</h3><ul class="bookmark-list">`)
-	b.WriteString(itemBuf.String())
+	for _, bookmark := range bookmarks {
+		renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
+	}
 	b.WriteString(`</ul></div>`)
 }
 
@@ -219,7 +224,7 @@ func localeUngroupedTitle(locale string) string {
 	return "未分类"
 }
 
-func renderBookmarkItem(b *strings.Builder, bookmark model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderBookmarkItem(b *bytes.Buffer, bookmark model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
 	templateURL := renderBookmarkHref(bookmark.URL, bookmark.LocalURL, preferLocal, EnableEncryptedLink, requestURL)
 	templateIcon := renderBookmarkIcon(bookmark.Icon, bookmark.URL, IconMode)
 	if OpenBookmarkNewTab {

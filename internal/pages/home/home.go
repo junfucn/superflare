@@ -24,6 +24,7 @@ import (
 	"github.com/junfuchang/superflare/internal/footer"
 	"github.com/junfuchang/superflare/internal/i18n"
 	"github.com/junfuchang/superflare/internal/pool"
+	"github.com/junfuchang/superflare/internal/resources/templates"
 	"github.com/junfuchang/superflare/internal/seo"
 	"github.com/junfuchang/superflare/internal/statuspage"
 )
@@ -577,7 +578,7 @@ func renderHelp(c *echo.Context) error {
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	bindSEOData(m, options, c.Request(), seo.PageHelp, nil, false)
-	return c.Render(http.StatusOK, "home.html", m)
+	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
 func pageSearch(c *echo.Context) error {
@@ -722,7 +723,7 @@ func pageBookmark(c *echo.Context) error {
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	m["InlineBookmarkTooltipScript"] = inlineBookmarkTooltipScript(hasBookmarkDescriptions)
 	bindSEOData(m, options, c.Request(), seo.PageBookmarks, bookmarkModules.items, false)
-	return c.Render(http.StatusOK, "home.html", m)
+	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
 func pageApplication(c *echo.Context) error {
@@ -798,7 +799,7 @@ func pageApplication(c *echo.Context) error {
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	bindSEOData(m, options, c.Request(), seo.PageApplications, applications.items, false)
-	return c.Render(http.StatusOK, "home.html", m)
+	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
 func render(c *echo.Context, filter string) error {
@@ -920,13 +921,13 @@ func render(c *echo.Context, filter string) error {
 	// A search result page is a thin duplicate of the home page: keep it out of
 	// the index so crawlers do not treat ?q-style permutations as content.
 	bindSEOData(m, options, c.Request(), seo.PageHome, homeSEOItems(applications.items, bookmarkModules.items), hasKeyword)
-	return c.Render(http.StatusOK, "home.html", m)
+	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
 // homeSEOItems merges the app and bookmark lists shown on the home page into one
 // curated list for structured data. The rendering order matches the page.
 func homeSEOItems(appItems, bookmarkItems []model.Bookmark) []model.Bookmark {
-	merged := make([]model.Bookmark, 0, min(len(appItems), seoItemLimit))
+	merged := make([]model.Bookmark, 0, min(len(appItems)+len(bookmarkItems), seoItemLimit))
 	for _, group := range [][]model.Bookmark{appItems, bookmarkItems} {
 		for _, item := range group {
 			if len(merged) >= seoItemLimit {
