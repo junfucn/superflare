@@ -41,10 +41,23 @@ SuperFlare 会从工作目录读取 `config.yml`、`apps.yml`、`bookmarks.yml`�
 
 ## 构建
 
-在仓库根目录执行：
+Windows 下双击 `fnapp/build-superflare-fpk.cmd` 即可一键打包。脚本会询问是否自增补丁版本号：
+
+- 输入 `Y`：先将 `fnapp/superflare/manifest` 中的版本号末位加一，例如 `0.1.3` → `0.1.4`，再构建。
+- 输入 `N`：保留当前版本号，直接构建。
+
+构建完成后会显示结果并等待按键，便于查看日志。自增版本号会直接保存到 `manifest`；构建失败后重试时，可以选择 `N` 避免再次递增。
+
+也可以在仓库根目录执行 PowerShell 脚本，默认保留当前版本号：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\fnapp\build-superflare-fpk.ps1
+```
+
+需要自增补丁版本号时，加上 `-BumpPatch`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\fnapp\build-superflare-fpk.ps1 -BumpPatch
 ```
 
 构建脚本会依次执行：

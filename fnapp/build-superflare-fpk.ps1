@@ -1,3 +1,5 @@
+param([switch]$BumpPatch)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -71,6 +73,28 @@ function Ensure-Directory {
     }
 }
 
+function Update-PackageVersion {
+    param([string]$ManifestPath)
+
+    $manifest = [System.IO.File]::ReadAllText($ManifestPath)
+    $versionMatches = [regex]::Matches($manifest, '(?m)^[ \t]*version[ \t]*=[ \t]*(?<version>[^ \t\r\n]+)[ \t]*\r?$')
+    if ($versionMatches.Count -ne 1) {
+        throw "Expected exactly one version entry in $ManifestPath."
+    }
+
+    $versionGroup = $versionMatches[0].Groups["version"]
+    $currentVersion = $null
+    if (-not [version]::TryParse($versionGroup.Value, [ref]$currentVersion) -or
+        $currentVersion.Build -lt 0 -or $currentVersion.Revision -ge 0) {
+        throw "Package version must use major.minor.patch format: $($versionGroup.Value)"
+    }
+
+    $nextVersion = [version]::new($currentVersion.Major, $currentVersion.Minor, ($currentVersion.Build + 1)).ToString()
+    $manifest = $manifest.Remove($versionGroup.Index, $versionGroup.Length).Insert($versionGroup.Index, $nextVersion)
+    [System.IO.File]::WriteAllText($ManifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Package version: $currentVersion -> $nextVersion"
+}
+
 function Reset-PackageRuntimeDirs {
     param(
         [string]$EtcDir,
@@ -117,6 +141,10 @@ $fpkFile = Join-Path $packageRoot "superflare.fpk"
 
 if (-not (Test-Path $packageRoot -PathType Container)) {
     throw "Package directory not found: $packageRoot"
+}
+
+if ($BumpPatch) {
+    Update-PackageVersion -ManifestPath (Join-Path $packageRoot "manifest")
 }
 
 Write-Host "Repo root: $repoRoot"
