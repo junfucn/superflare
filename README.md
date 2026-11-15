@@ -133,19 +133,26 @@ links:
 
 ## 开发与校验
 
+回归测试和性能基准保留在源码中，供后续修改时使用，不会编入发布程序。部署说明见上方“部署方式”，本地工具说明见 [`.tools/README.md`](.tools/README.md)。
+
 修改嵌入的静态资源或模板后，先生成资源，再运行测试和构建：
 
 ```bash
 go run ./build/build.go
 go test ./... -count=1
 go build ./...
+go vet ./...
 ```
+
+Windows 未将 Go 加入 PATH 时，将 `go` 替换为 `& .\.tools\go\bin\go.exe`。
 
 Windows 可额外执行仓库脚本校验，需要 Git Bash 和 Node.js，包含 fnOS 回归、脚本安全及站点图标 JavaScript 测试：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\test-all-scripts.ps1
 ```
+
+清理时可删除可重新生成的二进制、FPK、覆盖率报告、性能采样和测试临时文件。`build/` 是资源生成器源码，`internal/` 中的嵌入资源用于编译和运行；这些文件、本地工具链及上方列出的运行数据应保留。`.gitignore` 也忽略了运行配置和工具链，不要按忽略规则批量删除文件。
 
 ## 仓库结构
 

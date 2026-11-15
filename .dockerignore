@@ -10,7 +10,11 @@
 /.git
 /.github
 /.tools
+/.cache
+/.codex
+/.claude
 /coverage
+/coverage.html
 /docs
 /fnapp
 /tmp
@@ -23,6 +27,10 @@
 *.fpk
 *.log
 *.exe
+*.test
+*.out
+*.prof
+*.tmp
 /.env
 /.superflare-config.lock
 /apps.yml

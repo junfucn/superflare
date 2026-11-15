@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"testing"
@@ -81,10 +82,10 @@ func TestStartDaemonWithContext_NormalizesLowercaseVisibility(t *testing.T) {
 		}, daemonRuntime{
 			newRouter: func(flags *model.Flags) (http.Handler, error) {
 				if flags == nil {
-					t.Fatal("expected normalized flags")
+					return nil, errors.New("expected normalized flags")
 				}
 				if flags.Visibility != "PRIVATE" {
-					t.Fatalf("expected PRIVATE visibility, got %q", flags.Visibility)
+					return nil, fmt.Errorf("expected PRIVATE visibility, got %q", flags.Visibility)
 				}
 				return http.NewServeMux(), nil
 			},
