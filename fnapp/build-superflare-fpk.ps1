@@ -73,8 +73,11 @@ function Ensure-Directory {
     }
 }
 
-function Update-PackageVersion {
-    param([string]$ManifestPath)
+function Resolve-PackageVersion {
+    param(
+        [string]$ManifestPath,
+        [switch]$BumpPatch
+    )
 
     $manifest = [System.IO.File]::ReadAllText($ManifestPath)
     $versionMatches = [regex]::Matches($manifest, '(?m)^[ \t]*version[ \t]*=[ \t]*(?<version>[^ \t\r\n]+)[ \t]*\r?$')
@@ -89,10 +92,15 @@ function Update-PackageVersion {
         throw "Package version must use major.minor.patch format: $($versionGroup.Value)"
     }
 
+    if (-not $BumpPatch) {
+        return $versionGroup.Value
+    }
+
     $nextVersion = [version]::new($currentVersion.Major, $currentVersion.Minor, ($currentVersion.Build + 1)).ToString()
     $manifest = $manifest.Remove($versionGroup.Index, $versionGroup.Length).Insert($versionGroup.Index, $nextVersion)
     [System.IO.File]::WriteAllText($ManifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
     Write-Host "Package version: $currentVersion -> $nextVersion"
+    return $nextVersion
 }
 
 function Reset-PackageRuntimeDirs {
@@ -143,9 +151,8 @@ if (-not (Test-Path $packageRoot -PathType Container)) {
     throw "Package directory not found: $packageRoot"
 }
 
-if ($BumpPatch) {
-    Update-PackageVersion -ManifestPath (Join-Path $packageRoot "manifest")
-}
+$packageVersion = Resolve-PackageVersion -ManifestPath (Join-Path $packageRoot "manifest") -BumpPatch:$BumpPatch
+$versionedFpkFile = Join-Path $packageRoot "superflare-$packageVersion.fpk"
 
 Write-Host "Repo root: $repoRoot"
 Write-Host "Go: $goExe"
@@ -223,6 +230,8 @@ if (-not (Test-Path $fpkFile -PathType Leaf)) {
     throw "fnpack did not produce the expected package: $fpkFile"
 }
 
+Move-Item -LiteralPath $fpkFile -Destination $versionedFpkFile -Force
+
 Write-Host
 Write-Host "SuperFlare fnOS package is ready:"
-Write-Host $fpkFile
+Write-Host $versionedFpkFile

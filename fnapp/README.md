@@ -67,13 +67,15 @@ powershell -ExecutionPolicy Bypass -File .\fnapp\build-superflare-fpk.ps1 -BumpP
 3. 运行 `fnapp/test-lifecycle-config-preservation.ps1`，验证安装、恢复、升级和卸载不会破坏持久化配置
 4. 将 `config/defaults/` 下的四个 YAML 模板同步到 `app/server/defaults/`，并重建打包源目录中的空 `etc/`、`var/`
 5. 交叉编译 Linux `amd64` 版本的 `superflare`
-6. 执行 `fnpack build`
+6. 执行 `fnpack build`，成功后将 FPK 文件重命名为带版本号的文件名
 
 配置保留测试在同步默认文件和重置打包源运行目录之前执行；测试失败会立即中止构建，不会继续生成 FPK。仓库级脚本检查 `tools/test-all-scripts.ps1` 也运行同一测试，因此破坏性更新回归会同时阻断常规脚本检查和打包流程。
 
 构建结果：
 
-- `fnapp/superflare/superflare.fpk`
+- `fnapp/superflare/superflare-<版本号>.fpk`，例如 `superflare-0.1.4.fpk`
+
+文件名使用本次构建的 manifest 版本号；选择自增时会使用递增后的版本号。同一版本重新打包会覆盖对应文件，其他版本的包会保留。
 
 ## 运行默认值
 
