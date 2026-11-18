@@ -33,7 +33,11 @@
   background: color-mix(in srgb, var(--color-background) 85%, var(--color-accent));
 }
 
-#search-container :focus-visible {
+#search-container #search:focus-visible {
+  outline: none;
+}
+
+#search-container button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
