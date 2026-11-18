@@ -10,6 +10,7 @@ type Application struct {
 	OpenBookmarkNewTab         bool   `yaml:"OpenBookmarkNewTab"`
 	LocalNetworkURL            string `yaml:"LocalNetworkURL,omitempty"`
 	LocalNetworkID             string `yaml:"LocalNetworkID,omitempty"`
+	LocalNetworkDirectFallback bool   `yaml:"LocalNetworkDirectFallback"`
 	DisablePortCollection      bool   `yaml:"DisablePortCollection,omitempty"`
 	ShowTitle                  bool   `yaml:"ShowTitle"`
 	Greetings                  string `yaml:"Greetings"`

@@ -3,6 +3,7 @@ Footer: "<a href=\"https://github.com/junfuchang/superflare\" target=\"_blank\" 
 SiteIconMode: mdi
 OpenAppNewTab: true
 OpenBookmarkNewTab: true
+LocalNetworkDirectFallback: true
 ShowTitle: true
 Greetings: ""
 ShowSearchComponent: true

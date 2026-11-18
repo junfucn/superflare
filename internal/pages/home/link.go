@@ -8,6 +8,7 @@ import (
 
 	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
+	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/config/validation"
 	"github.com/junfuchang/superflare/internal/fn"
 	"github.com/junfuchang/superflare/internal/localnetwork"
@@ -63,19 +64,25 @@ func isHTTPBookmarkURL(rawURL string) bool {
 	return localnetwork.IsHTTPURL(rawURL)
 }
 
-func renderNetworkAttributes(b *bytes.Buffer, source, local string, encrypted bool, requestURL *fn.DynamicURL) {
-	if !isSafeBookmarkURL(source) || !shouldUseLocalRedirect(source, local, false, nil) {
+func renderBookmarkLinkAttributes(b *bytes.Buffer, item model.Bookmark, openInNewTab bool, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
+	sourceHref := renderBookmarkHref(item.URL, "", false, options.EnableEncryptedLink, requestURL)
+	hasLocal := sourceHref != "" && shouldUseLocalRedirect(item.URL, item.LocalURL, preferLocal, requestURL)
+	href := sourceHref
+	if hasLocal && !options.LocalNetworkDirectFallback {
+		href = renderBookmarkHref(item.URL, item.LocalURL, preferLocal, options.EnableEncryptedLink, requestURL)
+	}
+	renderBookmarkNavigationAttributes(b, href, openInNewTab)
+	if !hasLocal {
 		return
 	}
-	for _, attr := range [][2]string{
-		{"data-network-local", local},
-		{"data-network-source", renderBookmarkHref(source, "", false, encrypted, requestURL)},
-		{"data-network-redirect", renderBookmarkHref(source, local, false, encrypted, requestURL)},
-	} {
-		b.WriteByte(' ')
-		b.WriteString(attr[0])
-		b.WriteString(`="`)
-		b.WriteString(template.HTMLEscapeString(attr[1]))
+	b.WriteString(` data-network-local="`)
+	b.WriteString(template.HTMLEscapeString(item.LocalURL))
+	b.WriteString(`" data-network-source="`)
+	b.WriteString(template.HTMLEscapeString(sourceHref))
+	b.WriteByte('"')
+	if !options.LocalNetworkDirectFallback {
+		b.WriteString(` data-network-redirect="`)
+		b.WriteString(template.HTMLEscapeString(href))
 		b.WriteByte('"')
 	}
 }

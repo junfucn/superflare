@@ -235,5 +235,6 @@
   "seo_llms_section_apps": "\u5e94\u7528",
   "seo_llms_section_bookmarks": "\u4e66\u7b7e",
   "local_network_url": "SuperFlare \u5185\u7f51\u8bbf\u95ee\u5730\u5740",
-  "local_network_mode": "\u8bbf\u95ee\u6a21\u5f0f\uff08\u5f53\u524d\u6d4f\u89c8\u5668\uff09"
+  "local_network_mode": "\u8bbf\u95ee\u6a21\u5f0f\uff08\u5f53\u524d\u6d4f\u89c8\u5668\uff09",
+  "local_network_direct_fallback": "\u5185\u7f51\u672a\u786e\u8ba4\u65f6\u76f4\u63a5\u6253\u5f00\u5916\u7f51\u94fe\u63a5"
 }

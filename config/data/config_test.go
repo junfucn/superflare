@@ -45,6 +45,7 @@ func TestLoadAppConfigFromYamlDefaultValues(t *testing.T) {
 	assert.Equal(t, "bing", data.SearchEngine, "default search engine")
 	assert.Equal(t, "new-tab", data.SearchEngineOpenMode, "default search engine open mode")
 	assert.True(t, data.ShowFavorites, "default show favorites")
+	assert.True(t, data.LocalNetworkDirectFallback, "default direct fallback when LAN is unconfirmed")
 	assert.Equal(t, 5, data.HomeMaxColumns, "default home max columns")
 	assert.Equal(t, 1600, data.HomeMaxWidth, "default home max width")
 }
@@ -59,6 +60,28 @@ func TestLoadAppConfigFromRawPreservesExplicitShowFavoritesFalse(t *testing.T) {
 	options, err := LoadAppConfigFromRaw([]byte("Title: SuperFlare\nLocale: zh\nTheme: onedark\nShowFavorites: false\n"))
 	require.NoError(t, err)
 	assert.False(t, options.ShowFavorites)
+}
+
+func TestLoadAppConfigDefaultsDirectLANFallbackUnlessDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name, field string
+		want        bool
+	}{
+		{"missing", "", true},
+		{"disabled", "LocalNetworkDirectFallback: false\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			raw := []byte("Title: SuperFlare\nLocale: zh\nTheme: onedark\n" + tc.field)
+			require.NoError(t, os.WriteFile("config.yml", raw, 0644))
+			options, err := GetAllSettingsOptions()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, options.LocalNetworkDirectFallback)
+			options, err = LoadAppConfigFromRaw(raw)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, options.LocalNetworkDirectFallback)
+		})
+	}
 }
 
 func TestLoadAppConfigFromYamlDefaultsMissingShowFavoritesToTrue(t *testing.T) {

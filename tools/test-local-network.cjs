@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const script = fs.readFileSync(path.join(__dirname, '../internal/localnetwork/client.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function runtime({ mode = 'auto', url = 'https://nav.home.arpa/api/local-network/identity', redirect = false, cache, storageBlocked = false } = {}) {
+function runtime({ mode = 'auto', url = 'https://nav.home.arpa/api/local-network/identity', protocol = 'https:', redirect = false, directFallback = false, cache, storageBlocked = false } = {}) {
   let now = 100000;
   let timerID = 0;
   const timers = new Map();
@@ -34,7 +34,7 @@ function runtime({ mode = 'auto', url = 'https://nav.home.arpa/api/local-network
   const links = Array.from({ length: 4 }, (_, n) => node({
     'data-network-local': 'http://192.168.2.10/service' + n,
     'data-network-source': 'https://service.example.com/' + n,
-    'data-network-redirect': '/redir/local?item=' + n
+    ...(directFallback ? {} : { 'data-network-redirect': '/redir/local?item=' + n })
   }));
   const modeSelect = node();
   const manual = node();
@@ -51,10 +51,10 @@ function runtime({ mode = 'auto', url = 'https://nav.home.arpa/api/local-network
     getElementById(id) { return { 'settings-local-network-mode': modeSelect, 'local-network-status': status, 'local-network-controls': controls, 'local-network-retry': retry }[id]; },
     addEventListener(name, callback) { documentEvents[name] = callback; }
   };
-  const fetch = (address, options) => new Promise(resolve => requests.push({ address, options, resolve }));
+  const fetch = (address, options) => new Promise((resolve, reject) => requests.push({ address, options, resolve, reject }));
   const window = {
     fetch, AbortController,
-    location: { protocol: 'https:', replace(url) { navigations.push(url); } },
+    location: { protocol, replace(url) { navigations.push(url); } },
     setTimeout(callback, delay) { const id = ++timerID; timers.set(id, { callback, when: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
     addEventListener(name, callback) { windowEvents[name] = callback; }
@@ -123,6 +123,23 @@ test('positive cache expires and subsequent activation preserves a detection hre
   assert.equal(page.links[0].href, page.links[0].attrs['data-network-redirect']);
 });
 
+test('direct fallback opens the source while checking and after confirmation expires', async () => {
+  const page = runtime({ directFallback: true });
+  await settle();
+  const link = page.links[0];
+  assert.equal(page.requests.length, 1);
+  link.events.auxclick();
+  assert.equal(link.href, link.attrs['data-network-source']);
+  await page.respond();
+  assert.equal(link.href, link.attrs['data-network-local']);
+  await page.advance(30001);
+  link.events.click();
+  assert.equal(link.href, link.attrs['data-network-source']);
+  page.modeSelect.value = 'local';
+  page.modeSelect.events.change();
+  assert.equal(link.href, link.attrs['data-network-local']);
+});
+
 test('network change invalidates positive cache and ignores old in-flight results', async () => {
   const page = runtime();
   await settle();
@@ -151,13 +168,38 @@ test('manual modes bypass probes and survive unavailable browser storage', async
   assert.equal(page.links[0].href, page.links[0].attrs['data-network-local']);
 });
 
-test('mixed content and missing configuration are unconfirmed without service requests', async () => {
-  for (const url of ['', 'http://192.168.1.10:3636/api/local-network/identity']) {
-    const page = runtime({ url, redirect: true });
+test('HTTP origins can be verified from either HTTP or HTTPS pages', async () => {
+  for (const [protocol, host, addressSpace] of [
+    ['http:', '192.168.0.10', undefined],
+    ['https:', '192.168.0.10', 'local'],
+    ['https:', 'nav.home.arpa', 'local'],
+    ['https:', '[::1]', 'loopback']
+  ]) {
+    const url = `http://${host}:3636/api/local-network/identity`;
+    const page = runtime({ url, protocol, redirect: true });
     await settle();
-    assert.equal(page.requests.length, 0);
-    assert.deepEqual(page.navigations, ['https://nas.example.com/']);
+    assert.equal(page.requests.length, 1);
+    assert.equal(page.requests[0].address, url);
+    assert.equal(page.requests[0].options.targetAddressSpace, addressSpace);
+    await page.respond();
+    assert.deepEqual(page.navigations, ['http://nas/']);
   }
+});
+
+test('browser rejection of an HTTP probe falls back to the source', async () => {
+  const page = runtime({ url: 'http://192.168.0.10:3636/api/local-network/identity', redirect: true });
+  await settle();
+  page.requests[0].reject(new TypeError('Blocked by browser'));
+  await settle();
+  assert.equal(page.status.textContent, 'LAN not confirmed');
+  assert.deepEqual(page.navigations, ['https://nas.example.com/']);
+});
+
+test('missing configuration falls back without probing', async () => {
+  const page = runtime({ url: '', redirect: true });
+  await settle();
+  assert.equal(page.requests.length, 0);
+  assert.deepEqual(page.navigations, ['https://nas.example.com/']);
 });
 
 test('manual navigation cancels any pending automatic navigation', async () => {

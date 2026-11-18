@@ -8,6 +8,7 @@ import (
 
 	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/labstack/echo/v5"
 )
 
@@ -51,16 +52,34 @@ func TestIdentityEndpointIsReadableWithoutCredentials(t *testing.T) {
 }
 
 func TestProbeOriginNeverUsesPublicRequestOrClientIPAsEvidence(t *testing.T) {
-	for _, tc := range []struct{ request, configured, expected string }{
-		{"https://nav.example.com", "", ""},
-		{"http://192.168.1.10:3636", "", "http://192.168.1.10:3636" + IdentityPath},
-		{"https://nav.example.com", "https://nav.home.arpa", "https://nav.home.arpa" + IdentityPath},
+	proxies, err := netutil.ParseTrustedProxies("192.0.2.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, request, configured, forwarded, expected string
+		trusted                                        bool
+	}{
+		{name: "public entry", request: "https://nav.example.com"},
+		{name: "private entry", request: "http://192.168.1.10:3636", expected: "http://192.168.1.10:3636" + IdentityPath},
+		{name: "configured origin", request: "https://nav.example.com", configured: "http://192.168.1.10:3636", expected: "http://192.168.1.10:3636" + IdentityPath},
+		{name: "public proxy entry", request: "http://172.18.0.2:3636", forwarded: "nav.example.com", trusted: true},
+		{name: "private proxy entry", request: "http://nav.example.com", forwarded: "nas.home.arpa:8443", trusted: true, expected: "https://nas.home.arpa:8443" + IdentityPath},
+		{name: "untrusted forwarded entry", request: "https://nav.example.com", forwarded: "nas.home.arpa:8443"},
 	} {
-		r := httptest.NewRequest(http.MethodGet, tc.request, nil)
-		r.RemoteAddr = "192.168.1.2:1234"
-		got := Config(model.Application{LocalNetworkURL: tc.configured, LocalNetworkID: "test"}, r)
-		if got.URL != tc.expected {
-			t.Errorf("probe URL=%q, want %q", got.URL, tc.expected)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.request, nil)
+			r.RemoteAddr = "192.168.1.2:1234"
+			r.Header.Set("X-Forwarded-Host", tc.forwarded)
+			r.Header.Set("X-Forwarded-Proto", "https")
+			if tc.trusted {
+				r.RemoteAddr = "192.0.2.10:1234"
+				r = netutil.WithTrustedProxies(r, proxies)
+			}
+			got := Config(model.Application{LocalNetworkURL: tc.configured, LocalNetworkID: "test"}, r)
+			if got.URL != tc.expected {
+				t.Errorf("probe URL=%q, want %q", got.URL, tc.expected)
+			}
+		})
 	}
 }

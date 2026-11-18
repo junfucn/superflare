@@ -120,13 +120,13 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 		}
 		b.WriteString(`<div class="bookmark-groups">`)
 		for _, category := range bookmarksData.Categories {
-			renderBookmarksWithCategories(b, groups[strings.TrimSpace(category.ID)], category, filter != "", options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+			renderBookmarksWithCategories(b, groups[strings.TrimSpace(category.ID)], category, filter != "", options, preferLocal, requestURL)
 		}
-		renderUngroupedBookmarks(b, groups[""], options.Locale, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+		renderUngroupedBookmarks(b, groups[""], options, preferLocal, requestURL)
 		b.WriteString(`</div>`)
 	} else if showBookmarks {
 		b.WriteString(`<div class="bookmark-groups">`)
-		renderBookmarksWithoutCategories(b, bookmarks, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+		renderBookmarksWithoutCategories(b, bookmarks, options, preferLocal, requestURL)
 		b.WriteString(`</div>`)
 	}
 
@@ -134,7 +134,7 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 	if showFavorites && len(favorites) > 0 {
 		favoritesBuilder := pool.GetBuffer()
 		favoritesBuilder.WriteString(`<div class="bookmark-groups">`)
-		renderBookmarksWithoutCategories(favoritesBuilder, favorites, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+		renderBookmarksWithoutCategories(favoritesBuilder, favorites, options, preferLocal, requestURL)
 		favoritesBuilder.WriteString(`</div>`)
 		favoritesHTML = template.HTML(favoritesBuilder.String())
 		pool.PutBuffer(favoritesBuilder)
@@ -154,15 +154,15 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 	}, nil
 }
 
-func renderBookmarksWithoutCategories(b *bytes.Buffer, bookmarks []model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderBookmarksWithoutCategories(b *bytes.Buffer, bookmarks []model.Bookmark, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
 	b.WriteString(`<div class="bookmark-group-container pull-left"><ul class="bookmark-list">`)
 	for _, bookmark := range bookmarks {
-		renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
+		renderBookmarkItem(b, bookmark, options, preferLocal, requestURL)
 	}
 	b.WriteString(`</ul></div>`)
 }
 
-func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, category model.Category, expandSubdirs bool, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, category model.Category, expandSubdirs bool, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
 	if len(bookmarks) == 0 {
 		return
 	}
@@ -195,7 +195,7 @@ func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, 
 			b.WriteString(template.HTMLEscapeString(id))
 			b.WriteString(`">`)
 			for _, bookmark := range subdirs[subdir] {
-				renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
+				renderBookmarkItem(b, bookmark, options, preferLocal, requestURL)
 			}
 			b.WriteString(`</ul></details>`)
 		}
@@ -204,21 +204,21 @@ func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, 
 	b.WriteString(`<ul class="bookmark-list">`)
 	for _, bookmark := range bookmarks {
 		if bookmark.Subdir == "" {
-			renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
+			renderBookmarkItem(b, bookmark, options, preferLocal, requestURL)
 		}
 	}
 	b.WriteString(`</ul></div>`)
 }
 
-func renderUngroupedBookmarks(b *bytes.Buffer, bookmarks []model.Bookmark, locale string, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderUngroupedBookmarks(b *bytes.Buffer, bookmarks []model.Bookmark, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
 	if len(bookmarks) == 0 {
 		return
 	}
 	b.WriteString(`<div class="bookmark-group-container pull-left"><h3 class="bookmark-group-title">`)
-	b.WriteString(template.HTMLEscapeString(localeUngroupedTitle(locale)))
+	b.WriteString(template.HTMLEscapeString(localeUngroupedTitle(options.Locale)))
 	b.WriteString(`</h3><ul class="bookmark-list">`)
 	for _, bookmark := range bookmarks {
-		renderBookmarkItem(b, bookmark, OpenBookmarkNewTab, EnableEncryptedLink, IconMode, preferLocal, requestURL)
+		renderBookmarkItem(b, bookmark, options, preferLocal, requestURL)
 	}
 	b.WriteString(`</ul></div>`)
 }
@@ -230,14 +230,12 @@ func localeUngroupedTitle(locale string) string {
 	return "未分类"
 }
 
-func renderBookmarkItem(b *bytes.Buffer, bookmark model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
-	templateURL := renderBookmarkHref(bookmark.URL, bookmark.LocalURL, preferLocal, EnableEncryptedLink, requestURL)
-	templateIcon := renderBookmarkIcon(bookmark.Icon, bookmark.URL, IconMode)
+func renderBookmarkItem(b *bytes.Buffer, bookmark model.Bookmark, options *model.Application, preferLocal bool, requestURL *fn.DynamicURL) {
+	templateIcon := renderBookmarkIcon(bookmark.Icon, bookmark.URL, options.IconMode)
 	b.WriteString(`<li>`)
 	b.WriteString(`<a`)
-	renderBookmarkNavigationAttributes(b, templateURL, OpenBookmarkNewTab)
+	renderBookmarkLinkAttributes(b, bookmark, options.OpenBookmarkNewTab, options, preferLocal, requestURL)
 	b.WriteString(` class="bookmark"`)
-	renderNetworkAttributes(b, bookmark.URL, bookmark.LocalURL, EnableEncryptedLink, requestURL)
 	if description := strings.TrimSpace(bookmark.Desc); description != "" {
 		b.WriteString(` data-bookmark-description="`)
 		b.WriteString(template.HTMLEscapeString(description))

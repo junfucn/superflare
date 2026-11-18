@@ -172,7 +172,6 @@ func renderApplicationItem(b *bytes.Buffer, app model.Bookmark, options *model.A
 	if desc == "" {
 		desc = app.URL
 	}
-	templateURL := renderBookmarkHref(app.URL, app.LocalURL, preferLocal, options.EnableEncryptedLink, requestURL)
 	templateIcon := renderBookmarkIcon(app.Icon, app.URL, options.IconMode)
 	hasIcon := strings.TrimSpace(templateIcon) != ""
 	escapedID := template.HTMLEscapeString(app.Icon)
@@ -181,11 +180,10 @@ func renderApplicationItem(b *bytes.Buffer, app model.Bookmark, options *model.A
 	b.WriteString(`<div class="app-container" data-id="`)
 	b.WriteString(escapedID)
 	b.WriteString(`"><a`)
-	renderBookmarkNavigationAttributes(b, templateURL, options.OpenAppNewTab)
+	renderBookmarkLinkAttributes(b, app, options.OpenAppNewTab, options, preferLocal, requestURL)
 	b.WriteString(` class="app-item" title="`)
 	b.WriteString(escapedName)
 	b.WriteString(`"`)
-	renderNetworkAttributes(b, app.URL, app.LocalURL, options.EnableEncryptedLink, requestURL)
 	if hasIcon {
 		b.WriteString(`><div class="app-icon">`)
 		b.WriteString(templateIcon)

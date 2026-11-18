@@ -22,7 +22,7 @@ func NormalizeLocalNetworkURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || !validation.IsValidHTTPURL(raw) ||
 		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return "", fmt.Errorf("local network URL must be a SuperFlare origin, e.g. https://nav.home.arpa:3636")
+		return "", fmt.Errorf("local network URL must be a SuperFlare HTTP or HTTPS origin, e.g. http://192.168.0.10:3636")
 	}
 	return strings.ToLower(u.Scheme) + "://" + u.Host, nil
 }

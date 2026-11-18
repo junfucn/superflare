@@ -10,6 +10,7 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/config/validation"
 	"github.com/junfuchang/superflare/internal/fn"
+	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/labstack/echo/v5"
 )
 
@@ -30,16 +31,24 @@ type ClientConfig struct {
 	Redirect bool   `json:"redirect,omitempty"`
 }
 
-func Config(options model.Application, request *http.Request) ClientConfig {
-	origin := options.LocalNetworkURL
-	// A private entry address is useful without setup. A public entry address
-	// never proves LAN access, even when the server itself runs on the LAN.
-	if origin == "" && request != nil && fn.HostLooksLocalNetwork(request.Host) {
-		info := fn.ParseRequestURLTo(request)
-		origin, _ = data.NormalizeLocalNetworkURL(info.Origin)
+// Origin uses the configured LAN origin or the current LAN entry as a default.
+func Origin(configured string, request *http.Request) string {
+	if configured == "" && request != nil {
+		host := netutil.RequestForwardedHost(request)
+		if host == "" {
+			host = request.Host
+		}
+		if fn.HostLooksLocalNetwork(host) {
+			configured = netutil.RequestScheme(request) + "://" + host
+		}
 	}
+	origin, _ := data.NormalizeLocalNetworkURL(configured)
+	return origin
+}
+
+func Config(options model.Application, request *http.Request) ClientConfig {
 	endpoint := ""
-	if origin != "" {
+	if origin := Origin(options.LocalNetworkURL, request); origin != "" {
 		endpoint = origin + IdentityPath
 	}
 	return ClientConfig{URL: endpoint, ID: options.LocalNetworkID, Locale: options.Locale}

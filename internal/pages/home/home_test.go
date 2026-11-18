@@ -3241,7 +3241,7 @@ func TestRenderBookmarkItemUsesDedicatedLabelSpan(t *testing.T) {
 		Name: "Example",
 		URL:  "https://example.com",
 		Icon: "bookmark",
-	}, false, false, "", false, nil)
+	}, &model.Application{}, false, nil)
 
 	html := b.String()
 	if !strings.Contains(html, `class="bookmark-label"`) {
@@ -3256,7 +3256,7 @@ func TestBookmarkTooltipDescriptionAttributeEscapesAndTrims(t *testing.T) {
 		Name: "Example",
 		URL:  "https://example.com",
 		Desc: `  status "quoted" & <tag> 'single'  `,
-	}, false, false, define.IconModeHidden, false, nil)
+	}, &model.Application{IconMode: define.IconModeHidden}, false, nil)
 
 	html := b.String()
 	want := `data-bookmark-description="status &#34;quoted&#34; &amp; &lt;tag&gt; &#39;single&#39;"`
@@ -3276,7 +3276,7 @@ func TestBookmarkTooltipDescriptionAttributeOmittedWhenBlank(t *testing.T) {
 		Name: "Example",
 		URL:  "https://example.com",
 		Desc: " \t\r\n ",
-	}, false, false, define.IconModeHidden, false, nil)
+	}, &model.Application{IconMode: define.IconModeHidden}, false, nil)
 
 	if strings.Contains(b.String(), "data-bookmark-description") {
 		t.Fatalf("whitespace-only description must not emit tooltip data: %s", b.String())

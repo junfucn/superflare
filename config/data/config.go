@@ -56,7 +56,7 @@ func loadAppConfigFromYaml(name string) (model.Application, error) {
 }
 
 func loadAppConfigSnapshot(name string, normalized bool) (model.Application, error) {
-	result := model.Application{ShowFavorites: true}
+	result := model.Application{ShowFavorites: true, LocalNetworkDirectFallback: true}
 	filePath, err := configPath(name)
 	if err != nil {
 		return result, err
@@ -85,7 +85,7 @@ func loadAppConfigSnapshot(name string, normalized bool) (model.Application, err
 }
 
 func LoadAppConfigFromRaw(raw []byte) (model.Application, error) {
-	result := model.Application{ShowFavorites: true}
+	result := model.Application{ShowFavorites: true, LocalNetworkDirectFallback: true}
 	if err := yaml.Unmarshal(raw, &result); err != nil {
 		return result, fmt.Errorf("parse config raw failed: %w", err)
 	}

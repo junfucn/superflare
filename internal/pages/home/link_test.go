@@ -129,9 +129,11 @@ func TestRenderBookmarkHrefPreservesNonExecutableSchemes(t *testing.T) {
 
 func TestRenderBookmarkItemDisablesExecutableURL(t *testing.T) {
 	var output bytes.Buffer
-	renderBookmarkItem(&output, model.Bookmark{Name: "Unsafe", URL: "javascript:alert(1)"}, true, true, define.IconModeHidden, false, nil)
+	options := &model.Application{OpenBookmarkNewTab: true, EnableEncryptedLink: true, IconMode: define.IconModeHidden}
+	item := model.Bookmark{Name: "Unsafe", URL: "javascript:alert(1)", LocalURL: "http://192.168.1.10/app"}
+	renderBookmarkItem(&output, item, options, false, nil)
 	got := output.String()
-	if strings.Contains(got, "href=") || !strings.Contains(got, `tabindex="0" role="link" aria-disabled="true"`) || !strings.Contains(got, "Unsafe") {
+	if strings.Contains(got, "href=") || strings.Contains(got, "data-network-") || !strings.Contains(got, `tabindex="0" role="link" aria-disabled="true"`) || !strings.Contains(got, "Unsafe") {
 		t.Fatalf("unsafe bookmark should remain visible but non-interactive: %s", got)
 	}
 }
@@ -146,11 +148,29 @@ func TestRenderApplicationItemDisablesExecutableURL(t *testing.T) {
 	}
 }
 
-func TestRenderNetworkAttributesIgnoreUnsafeSourceURL(t *testing.T) {
-	var output bytes.Buffer
-	renderNetworkAttributes(&output, "javascript:alert(1)", "http://192.168.1.10/app", true, nil)
-	if got := output.String(); got != "" {
-		t.Fatalf("unsafe source must not opt into local network links: %s", got)
+func TestRenderNetworkLinksCanSkipProbePage(t *testing.T) {
+	item := model.Bookmark{Name: "Example", URL: "https://example.com/app", LocalURL: "http://192.168.1.10/app"}
+	for _, renderer := range []func(*bytes.Buffer, model.Bookmark, *model.Application, bool, *fn.DynamicURL){
+		renderBookmarkItem, renderApplicationItem,
+	} {
+		for _, tc := range []struct {
+			direct, encrypted bool
+			wantHrefPrefix    string
+		}{
+			{false, false, define.MiscPages.RedirLocal.Path + "?"},
+			{true, false, item.URL},
+			{true, true, define.MiscPages.RedirHelper.Path + "?"},
+		} {
+			var output bytes.Buffer
+			options := &model.Application{LocalNetworkDirectFallback: tc.direct, EnableEncryptedLink: tc.encrypted, IconMode: define.IconModeHidden}
+			renderer(&output, item, options, false, nil)
+			got := output.String()
+			if !strings.Contains(got, ` href="`+tc.wantHrefPrefix) ||
+				!strings.Contains(got, `data-network-local="`+item.LocalURL+`"`) ||
+				strings.Contains(got, `data-network-redirect=`) == tc.direct {
+				t.Fatalf("direct=%t, encrypted=%t: unexpected link markup: %s", tc.direct, tc.encrypted, got)
+			}
+		}
 	}
 }
 
@@ -166,7 +186,7 @@ func TestRenderedNavigationPreservesEscapedURLAttributes(t *testing.T) {
 			if application {
 				renderApplicationItem(&output, item, &model.Application{IconMode: define.IconModeHidden}, false, nil)
 			} else {
-				renderBookmarkItem(&output, item, false, false, define.IconModeHidden, false, nil)
+				renderBookmarkItem(&output, item, &model.Application{IconMode: define.IconModeHidden}, false, nil)
 			}
 			tokens := html.NewTokenizer(strings.NewReader(output.String()))
 			found := false

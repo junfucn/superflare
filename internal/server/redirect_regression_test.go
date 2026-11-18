@@ -151,6 +151,7 @@ func TestPageDynamicRedirectsFromRenderedLinks(t *testing.T) {
 	require.NoError(t, err)
 	options.ShowApps, options.ShowBookmarks, options.ShowFavorites = true, true, true
 	options.EnableEncryptedLink = true
+	options.LocalNetworkDirectFallback = false
 	require.NoError(t, data.UpdateAppearance(options))
 	items := model.Bookmarks{Items: []model.Bookmark{
 		{Name: "Path", URL: "https://service.example.test/open?from={pathname}"},

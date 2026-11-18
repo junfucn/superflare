@@ -1,12 +1,12 @@
 "use strict";
 var labels = config.locale === "en" ? {
   checking: "Checking LAN", verified: "LAN confirmed", unknown: "LAN not confirmed",
-  mismatch: "Different SuperFlare instance", blocked: "HTTPS required for LAN detection",
+  mismatch: "Different SuperFlare instance",
   unconfigured: "LAN origin not configured", offline: "Offline",
   local: "LAN selected", source: "Source selected"
 } : {
   checking: "\u6b63\u5728\u8bc6\u522b\u5185\u7f51", verified: "\u5185\u7f51\u5df2\u786e\u8ba4", unknown: "\u5185\u7f51\u672a\u786e\u8ba4",
-  mismatch: "SuperFlare \u5b9e\u4f8b\u4e0d\u5339\u914d", blocked: "\u5185\u7f51\u68c0\u6d4b\u9700\u8981 HTTPS",
+  mismatch: "SuperFlare \u5b9e\u4f8b\u4e0d\u5339\u914d",
   unconfigured: "\u672a\u914d\u7f6e\u5185\u7f51\u5165\u53e3", offline: "\u7f51\u7edc\u5df2\u65ad\u5f00",
   local: "\u5df2\u9009\u62e9\u5185\u7f51", source: "\u5df2\u9009\u62e9\u6e90\u5730\u5740"
 };
@@ -41,7 +41,8 @@ function target(link) {
 function render() {
   links.forEach(function(link) {
     // Leave a real href for middle-click, modifier-click and browser menus.
-    link.href = mode === "auto" && !fresh() ? link.getAttribute("data-network-redirect") : target(link);
+    var probeHref = mode === "auto" && !fresh() && link.getAttribute("data-network-redirect");
+    link.href = probeHref || target(link);
   });
   if (modeSelect) { modeSelect.value = mode; }
   var displayState = state === "verified" && !fresh() ? "unknown" : state;
@@ -74,9 +75,6 @@ function check() {
   if (navigator.onLine === false) { return Promise.resolve(remember("offline")); }
   var endpoint;
   try { endpoint = new URL(config.url); } catch (e) { return Promise.resolve(remember("unconfigured")); }
-  if (window.location.protocol === "https:" && endpoint.protocol === "http:") {
-    return Promise.resolve(remember("blocked"));
-  }
   if (!window.fetch || !window.AbortController) { return Promise.resolve(remember("unknown")); }
   var budget = config.redirect ? Math.max(0, redirectDeadline - Date.now()) : 1200;
   if (!budget) { return Promise.resolve(remember("unknown")); }
@@ -90,10 +88,18 @@ function check() {
     timeout = window.setTimeout(function() { requestController.abort(); resolve("unknown"); }, budget);
   });
   var request = Promise.resolve().then(function() {
-    return fetch(endpoint.href, {
+    var options = {
       method: "GET", mode: "cors", cache: "no-store", credentials: "omit",
       redirect: "error", referrerPolicy: "no-referrer", signal: requestController.signal
-    });
+    };
+    if (window.location.protocol === "https:" && endpoint.protocol === "http:") {
+      // Supporting browsers can prompt for LAN access instead of blocking mixed content outright.
+      var host = endpoint.hostname.replace(/\.$/, "");
+      var loopback = host === "localhost" || host.endsWith(".localhost") ||
+        /^127\.\d+\.\d+\.\d+$/.test(host) || host === "[::1]";
+      options.targetAddressSpace = loopback ? "loopback" : "local";
+    }
+    return fetch(endpoint.href, options);
   }).then(function(response) {
     if (!response.ok || !(response.headers.get("content-type") || "").includes("application/json")) { return "unknown"; }
     return response.json().then(function(value) {
@@ -148,7 +154,7 @@ links.forEach(function(link) {
 
 try {
   var cached = JSON.parse(sessionStorage.getItem(cacheKey));
-  if (cached && ["verified", "unknown", "mismatch", "blocked", "unconfigured", "offline"].indexOf(cached.state) >= 0 && typeof cached.time === "number") {
+  if (cached && ["verified", "unknown", "mismatch", "unconfigured", "offline"].indexOf(cached.state) >= 0 && typeof cached.time === "number") {
     state = cached.state; checkedAt = cached.time;
   }
 } catch (e) {}

@@ -337,6 +337,33 @@ func TestUpdateAppearanceOptionsPersistsHideWarningsButton(t *testing.T) {
 	}
 }
 
+func TestUpdateAppearanceOptionsPersistsDirectLANFallback(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := data.EnsureAppConfigExists(); err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	for _, enabled := range []bool{true, false} {
+		form := url.Values{"icon-mode": {"FILLING"}, "locale": {"en"}}
+		if enabled {
+			form.Set("local-network-direct-fallback", "true")
+		}
+		req := httptest.NewRequest(http.MethodPost, "/settings/appearance", strings.NewReader(form.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		if err := updateAppearanceOptions(e.NewContext(req, rec)); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d: %s", rec.Code, rec.Body.String())
+		}
+		options, err := data.GetAllSettingsOptions()
+		if err != nil || options.LocalNetworkDirectFallback != enabled {
+			t.Fatalf("direct LAN fallback=%t, want %t; load error: %v", options.LocalNetworkDirectFallback, enabled, err)
+		}
+	}
+}
+
 func TestUpdateAppearanceOptionsPersistsAndBindsFavoritesSettings(t *testing.T) {
 	dir := t.TempDir()
 	oldWd, _ := os.Getwd()

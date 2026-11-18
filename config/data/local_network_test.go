@@ -18,7 +18,7 @@ func TestLocalNetworkIdentitySurvivesSettingsUpdates(t *testing.T) {
 	if err != nil || len(before.LocalNetworkID) < 26 {
 		t.Fatalf("identity missing: %v", err)
 	}
-	origin := " https://nav.home.arpa:8443/ "
+	origin := " http://192.168.0.10:3636/ "
 	if err := UpdateAppearanceWithOptionalNetwork(model.Application{Locale: "zh", IconMode: "NONE"}, nil, &origin); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestLocalNetworkIdentitySurvivesSettingsUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.LocalNetworkID != before.LocalNetworkID || after.LocalNetworkURL != "https://nav.home.arpa:8443" {
+	if after.LocalNetworkID != before.LocalNetworkID || after.LocalNetworkURL != "http://192.168.0.10:3636" {
 		t.Fatal("identity or origin changed during unrelated settings update")
 	}
 }

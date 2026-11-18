@@ -235,5 +235,6 @@
   "seo_llms_section_apps": "Applications",
   "seo_llms_section_bookmarks": "Bookmarks",
   "local_network_url": "SuperFlare LAN origin",
-  "local_network_mode": "Address preference (this browser)"
+  "local_network_mode": "Address preference (this browser)",
+  "local_network_direct_fallback": "Open external link immediately when LAN is not confirmed"
 }

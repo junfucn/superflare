@@ -386,6 +386,7 @@ func UpdateAppearanceWithOptionalNetwork(update model.Application, greetings *st
 		options.SiteIconMode = update.SiteIconMode
 		options.OpenAppNewTab = update.OpenAppNewTab
 		options.OpenBookmarkNewTab = update.OpenBookmarkNewTab
+		options.LocalNetworkDirectFallback = update.LocalNetworkDirectFallback
 		if localNetworkURL != nil {
 			value, err := NormalizeLocalNetworkURL(*localNetworkURL)
 			if err != nil {

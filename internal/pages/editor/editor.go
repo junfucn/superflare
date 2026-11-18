@@ -31,9 +31,9 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
 	"github.com/junfuchang/superflare/internal/background"
-	"github.com/junfuchang/superflare/internal/fn"
 	"github.com/junfuchang/superflare/internal/footer"
 	"github.com/junfuchang/superflare/internal/i18n"
+	"github.com/junfuchang/superflare/internal/localnetwork"
 	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/junfuchang/superflare/internal/pool"
 	"github.com/junfuchang/superflare/internal/statuspage"
@@ -1248,21 +1248,8 @@ func render(c *echo.Context) error {
 }
 
 func editorPortHost(origin string, request *http.Request) string {
+	origin = localnetwork.Origin(origin, request)
 	if origin == "" {
-		if request == nil {
-			return ""
-		}
-		authority := netutil.RequestForwardedHost(request)
-		if authority == "" {
-			authority = request.Host
-		}
-		if !fn.HostLooksLocalNetwork(authority) {
-			return ""
-		}
-		origin = "http://" + authority
-	}
-	origin, err := data.NormalizeLocalNetworkURL(origin)
-	if err != nil || origin == "" {
 		return ""
 	}
 	u, err := url.Parse(origin)
