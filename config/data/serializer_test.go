@@ -1,6 +1,8 @@
 package data
 
 import (
+	"encoding/base64"
+	"net/url"
 	"testing"
 )
 
@@ -22,6 +24,24 @@ func TestJSONStringify(t *testing.T) {
 	_, err = jsonStringify(make(chan int))
 	if err == nil {
 		t.Fatal("JSON Stringify Error")
+	}
+}
+
+func TestRedirectEncodingSurvivesQueryParsing(t *testing.T) {
+	for _, target := range []string{
+		"https://example.com/~", "https://example.com/?q=a+b&next=%2Fpath", "http://[fd00::1]:5000/path",
+	} {
+		encoded := Base64EncodeUrl(target)
+		query, err := url.ParseQuery("go=" + encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, input := range []string{encoded, query.Get("go"), base64.StdEncoding.EncodeToString([]byte(target))} {
+			decoded, err := Base64DecodeUrl(input)
+			if err != nil || string(decoded) != target {
+				t.Errorf("decode %q = %q, %v; want %q", input, decoded, err, target)
+			}
+		}
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
@@ -302,35 +303,27 @@ func TestValidateRestorePayloadRejectsBookmarksWithUnknownCategory(t *testing.T)
 }
 
 func TestRestoreDataRejectsOversizedBackupUpload(t *testing.T) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("backup", "config.yml")
-	if err != nil {
-		t.Fatalf("create form file: %v", err)
-	}
-	if _, err := part.Write(bytes.Repeat([]byte("a"), restoreUploadMaxBytes+1)); err != nil {
-		t.Fatalf("write form file: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
-	}
-
 	e := echo.New()
+	body := strings.NewReader("--oversized\r\n")
 	req := httptest.NewRequest(http.MethodPost, "/editor/restore", body)
-	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	req.ContentLength = restoreRequestMaxBytes + 1
+	req.Header.Set(echo.HeaderContentType, "multipart/form-data; boundary=oversized")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
 	if err := restoreData(c); err != nil {
 		t.Fatalf("restoreData: %v", err)
 	}
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d", rec.Code)
+	}
+	if body.Len() != len("--oversized\r\n") || req.MultipartForm != nil {
+		t.Fatal("oversized request body was parsed")
 	}
 	if !strings.Contains(rec.Body.String(), "status-panel") {
 		t.Fatalf("expected styled error page, got %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "backup file too large") {
+	if !strings.Contains(rec.Body.String(), "backup request too large") {
 		t.Fatalf("expected oversize error message, got %s", rec.Body.String())
 	}
 }
@@ -631,7 +624,11 @@ func TestUpdateDataRedirectsWithSuccessNoticeWhenSaveSucceeds(t *testing.T) {
 	}
 
 	e := echo.New()
-	form := strings.NewReader("categories=1,Links&bookmarks=1,Bookmark%20A,https://bookmark.example.com,,Links,,,")
+	snapshot, err := data.GetEditorSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := strings.NewReader("revision=" + snapshot.Revision + "&categories=1,Links&bookmarks=1,Bookmark%20A,https://bookmark.example.com,,Links,,,")
 	req := httptest.NewRequest(http.MethodPost, "/editor", form)
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	rec := httptest.NewRecorder()
@@ -900,6 +897,9 @@ func TestRollbackPendingRestoreFilesRestoresBackups(t *testing.T) {
 	if err := os.WriteFile(targetA, []byte("new-a"), 0644); err != nil {
 		t.Fatalf("write targetA: %v", err)
 	}
+	if err := os.WriteFile(targetB, []byte("original-b"), 0644); err != nil {
+		t.Fatalf("write targetB: %v", err)
+	}
 	if err := os.WriteFile(tempA, []byte("temp-a"), 0644); err != nil {
 		t.Fatalf("write tempA: %v", err)
 	}
@@ -1119,7 +1119,7 @@ func TestRenderWarnsAndSanitizesInvalidSiteIcon(t *testing.T) {
 
 	e := echo.New()
 	e.Renderer = editorCaptureRenderer{t: t}
-	req := httptest.NewRequest(http.MethodGet, "/editor", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.1.10/editor", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
@@ -1540,7 +1540,7 @@ func TestRefreshRuntimeLoginConfigReturnsErrorWhenConfigBrokenEvenIfEnvComplete(
 	}
 }
 
-func TestWriteRestoreFilesAtomicallyRepairsDefaultLoginWhenBackupClearsConfigAccount(t *testing.T) {
+func TestWriteRestoreFilesAtomicallyPreservesLoginWhenBackupClearsConfigAccount(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -1585,8 +1585,8 @@ func TestWriteRestoreFilesAtomicallyRepairsDefaultLoginWhenBackupClearsConfigAcc
 	}
 
 	snapshot := auth.SnapshotLoginRuntimeConfigForSessionName(auth.RequestHandleSessionName(define.AppFlags.CookieName, define.AppFlags.Port))
-	if snapshot.User != define.DEFAULT_LOGIN_USER || snapshot.Pass != define.DEFAULT_LOGIN_PASS {
-		t.Fatalf("expected runtime login snapshot to use repaired defaults, got user=%q pass=%q", snapshot.User, snapshot.Pass)
+	if snapshot.User != "old-user" || snapshot.Pass != "old-pass" {
+		t.Fatalf("expected runtime login snapshot to preserve the active account, got user=%q pass=%q", snapshot.User, snapshot.Pass)
 	}
 	if define.AppFlags.User != "old-user" || define.AppFlags.Pass != "old-pass" {
 		t.Fatalf("expected global app flags unchanged after default repair, got user=%q pass=%q", define.AppFlags.User, define.AppFlags.Pass)
@@ -1599,12 +1599,12 @@ func TestWriteRestoreFilesAtomicallyRepairsDefaultLoginWhenBackupClearsConfigAcc
 		t.Fatalf("read repaired config.yml: %v", err)
 	}
 	configText := string(configRaw)
-	if !strings.Contains(configText, "LoginUser: "+define.DEFAULT_LOGIN_USER) || !strings.Contains(configText, "LoginPass: "+define.DEFAULT_LOGIN_PASS) {
-		t.Fatalf("expected restored config credentials to be repaired to defaults, got %s", configText)
+	if !strings.Contains(configText, "LoginUser: old-user") || !strings.Contains(configText, "LoginPass: old-pass") {
+		t.Fatalf("expected restored config credentials to preserve the active account, got %s", configText)
 	}
 }
 
-func TestWriteRestoreFilesAtomicallyRepairsDefaultLoginWithStoredRuntimeSession(t *testing.T) {
+func TestWriteRestoreFilesAtomicallyPreservesLoginWithStoredRuntimeSession(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -1678,8 +1678,8 @@ func TestWriteRestoreFilesAtomicallyRepairsDefaultLoginWithStoredRuntimeSession(
 	}
 
 	snapshot := auth.SnapshotLoginRuntimeConfigForSessionName(auth.RequestHandleSessionName("runtime-cookie", 3636))
-	if snapshot.User != define.DEFAULT_LOGIN_USER || snapshot.Pass != define.DEFAULT_LOGIN_PASS {
-		t.Fatalf("expected stored runtime session to receive repaired defaults, got user=%q pass=%q", snapshot.User, snapshot.Pass)
+	if snapshot.User != "old-user" || snapshot.Pass != "old-pass" {
+		t.Fatalf("expected stored runtime session to preserve the active account, got user=%q pass=%q", snapshot.User, snapshot.Pass)
 	}
 }
 
@@ -2041,7 +2041,10 @@ func TestRefreshRequestLoginRuntimeUpdatesCurrentRouterSnapshot(t *testing.T) {
 	auth.RequestHandle(e)
 	e.GET("/probe", func(c *echo.Context) error {
 		auth.StoreLoginRuntimeConfigForRequest(c, auth.SnapshotLoginRuntimeConfigFromFlags(model.Flags{User: "old-user", Pass: "old-pass"}))
-		refreshRequestLoginRuntime(c)
+		auth.StoreLoginRuntimeConfigForSessionName(auth.SessionNameForRequest(c), auth.SnapshotLoginRuntimeConfigFromFlags(model.Flags{User: "restored-user", Pass: "restored-pass"}))
+		if err := refreshRequestLoginRuntime(c); err != nil {
+			t.Fatalf("refreshRequestLoginRuntime: %v", err)
+		}
 		snapshot := auth.SnapshotLoginRuntimeConfigForRequest(c)
 		if snapshot.User != "restored-user" || snapshot.Pass != "restored-pass" {
 			t.Fatalf("expected current router snapshot to refresh, got user=%q pass=%q", snapshot.User, snapshot.Pass)

@@ -123,6 +123,46 @@ func TestCollectRuntimePortsResultReturnsErrorWhenWindowsPortCommandsFail(t *tes
 	}
 }
 
+func TestCollectRuntimePortsResultRejectsPartialWindowsProtocolCollection(t *testing.T) {
+	for _, protocol := range []string{"tcp", "udp"} {
+		for _, malformed := range []bool{false, true} {
+			name := protocol + "/command-failure"
+			if malformed {
+				name = protocol + "/malformed-output"
+			}
+			t.Run(name, func(t *testing.T) {
+				originalRunner := runPowerShell
+				t.Cleanup(func() { runPowerShell = originalRunner })
+				queryErr := errors.New("protocol query unavailable")
+				runPowerShell = func(script string) ([]byte, error) {
+					if strings.Contains(script, "Get-Process |") {
+						return []byte("\"Id\",\"ProcessName\"\r\n\"4321\",\"superflare\"\r\n"), nil
+					}
+					isTCP := strings.Contains(script, "Get-NetTCPConnection")
+					if isTCP == (protocol == "tcp") {
+						if malformed {
+							return []byte("\"Port\",\"Process\"\r\n\"5668\",\"4321\"\r\n"), nil
+						}
+						return nil, queryErr
+					}
+					return []byte("\"LocalPort\",\"OwningProcess\"\r\n\"5668\",\"4321\"\r\n"), nil
+				}
+
+				got := collectRuntimePortsResult()
+				if got.Err == nil || !strings.Contains(got.Err.Error(), strings.ToUpper(protocol)) {
+					t.Fatalf("expected error identifying the failed protocol, got %+v", got)
+				}
+				if !malformed && !errors.Is(got.Err, queryErr) {
+					t.Fatalf("expected wrapped query error, got %v", got.Err)
+				}
+				if len(got.Ports) != 0 || len(got.Warnings) != 0 {
+					t.Fatalf("incomplete collection must not be merged into false stopped states: %+v", got)
+				}
+			})
+		}
+	}
+}
+
 func TestCollectRuntimePortsResultUsesPerPIDProcessLookupWhenBulkProcessCollectionFails(t *testing.T) {
 	originalRunner := runPowerShell
 	originalLookup := lookupWindowsProcessNameErr
@@ -224,5 +264,45 @@ func TestCollectRuntimePortsResultReturnsErrorWhenWindowsPortCommandOutputMalfor
 	}
 	if len(got.Ports) != 0 {
 		t.Fatalf("expected no runtime ports on malformed output, got %#v", got.Ports)
+	}
+}
+
+func TestWindowsOwnerLookupCachesFailuresAcrossProtocols(t *testing.T) {
+	originalRunner, originalLookup := runPowerShell, lookupWindowsProcessNameErr
+	t.Cleanup(func() {
+		runPowerShell, lookupWindowsProcessNameErr = originalRunner, originalLookup
+	})
+	runPowerShell = func(script string) ([]byte, error) {
+		if strings.Contains(script, "Get-Process |") {
+			return []byte("\"Id\",\"ProcessName\"\r\n"), nil
+		}
+		return []byte("\"LocalPort\",\"OwningProcess\"\r\n\"8080\",\"4321\"\r\n\"9090\",\"4321\"\r\n"), nil
+	}
+	lookups := 0
+	lookupWindowsProcessNameErr = func(int) (string, error) {
+		lookups++
+		return "", errors.New("process exited")
+	}
+	result := collectRuntimePortsResult()
+	if result.Err != nil || len(result.Ports) != 4 || len(result.Warnings) != 1 || lookups != 1 {
+		t.Fatalf("expected one lookup and all ports with an owner warning: lookups=%d result=%+v", lookups, result)
+	}
+}
+
+func TestWindowsOwnerLookupBudgetKeepsPortResults(t *testing.T) {
+	originalRunner, originalLookup := runPowerShell, lookupWindowsProcessNameErr
+	t.Cleanup(func() {
+		runPowerShell, lookupWindowsProcessNameErr = originalRunner, originalLookup
+	})
+	runPowerShell = func(string) ([]byte, error) {
+		return []byte("\"LocalPort\",\"OwningProcess\"\r\n\"8080\",\"4321\"\r\n\"9090\",\"9876\"\r\n"), nil
+	}
+	lookupWindowsProcessNameErr = func(int) (string, error) {
+		t.Error("process lookup ran after budget exhaustion")
+		return "", nil
+	}
+	result := collectWindowsPortsWithLookup("ports", "tcp", map[int]string{9876: "known"}, newWindowsProcessNameLookup(0))
+	if result.err != nil || result.ownerErr == nil || len(result.items) != 2 || result.items[1].ServiceName != "known" {
+		t.Fatalf("budget must retain both known and unresolved ports: %+v", result)
 	}
 }

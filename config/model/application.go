@@ -8,6 +8,9 @@ type Application struct {
 	SiteIconMode               string `yaml:"SiteIconMode,omitempty"`
 	OpenAppNewTab              bool   `yaml:"OpenAppNewTab"`
 	OpenBookmarkNewTab         bool   `yaml:"OpenBookmarkNewTab"`
+	LocalNetworkURL            string `yaml:"LocalNetworkURL,omitempty"`
+	LocalNetworkID             string `yaml:"LocalNetworkID,omitempty"`
+	DisablePortCollection      bool   `yaml:"DisablePortCollection,omitempty"`
 	ShowTitle                  bool   `yaml:"ShowTitle"`
 	Greetings                  string `yaml:"Greetings"`
 	ShowSearchComponent        bool   `yaml:"ShowSearchComponent"`

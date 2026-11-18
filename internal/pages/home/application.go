@@ -9,6 +9,7 @@ import (
 
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/fn"
+	"github.com/junfuchang/superflare/internal/i18n"
 	"github.com/junfuchang/superflare/internal/pool"
 	"github.com/junfuchang/superflare/internal/resources/mdi"
 )
@@ -147,16 +148,19 @@ func renderApplicationDirectoryModal(b *bytes.Buffer, directory applicationDirec
 	modalID := template.HTMLEscapeString("application-subdir-modal-" + indexString)
 	titleID := template.HTMLEscapeString("application-subdir-title-" + indexString)
 	escapedName := template.HTMLEscapeString(directory.Name)
+	closeLabel := template.HTMLEscapeString(i18n.T(options.Locale, "close"))
 
 	b.WriteString(`<div id="`)
 	b.WriteString(modalID)
-	b.WriteString(`" class="application-subdirectory-modal"><a href="#" class="application-subdirectory-backdrop" aria-label="Close" tabindex="-1" aria-hidden="true"></a><div class="application-subdirectory-panel" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="`)
+	b.WriteString(`" class="application-subdirectory-modal"><a href="#" class="application-subdirectory-backdrop" tabindex="-1" aria-hidden="true"></a><div class="application-subdirectory-panel" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="`)
 	b.WriteString(titleID)
 	b.WriteString(`"><div class="application-subdirectory-header"><h2 id="`)
 	b.WriteString(titleID)
 	b.WriteString(`">`)
 	b.WriteString(escapedName)
-	b.WriteString(`</h2><a href="#" class="application-subdirectory-close" aria-label="Close">&times;</a></div><div class="application-subdirectory-content apps-surface clearfix">`)
+	b.WriteString(`</h2><a href="#" class="application-subdirectory-close" aria-label="`)
+	b.WriteString(closeLabel)
+	b.WriteString(`">&times;</a></div><div class="application-subdirectory-content apps-surface clearfix">`)
 	for _, app := range directory.Items {
 		renderApplicationItem(b, app, options, preferLocal, requestURL)
 	}
@@ -172,25 +176,22 @@ func renderApplicationItem(b *bytes.Buffer, app model.Bookmark, options *model.A
 	templateIcon := renderBookmarkIcon(app.Icon, app.URL, options.IconMode)
 	hasIcon := strings.TrimSpace(templateIcon) != ""
 	escapedID := template.HTMLEscapeString(app.Icon)
-	escapedURL := template.HTMLEscapeString(templateURL)
 	escapedName := template.HTMLEscapeString(app.Name)
 	escapedDesc := template.HTMLEscapeString(desc)
 	b.WriteString(`<div class="app-container" data-id="`)
 	b.WriteString(escapedID)
-	if options.OpenAppNewTab {
-		b.WriteString(`"><a target="_blank" rel="noopener" href="`)
-	} else {
-		b.WriteString(`"><a rel="noopener" href="`)
-	}
-	b.WriteString(escapedURL)
-	b.WriteString(`" class="app-item" title="`)
+	b.WriteString(`"><a`)
+	renderBookmarkNavigationAttributes(b, templateURL, options.OpenAppNewTab)
+	b.WriteString(` class="app-item" title="`)
 	b.WriteString(escapedName)
+	b.WriteString(`"`)
+	renderNetworkAttributes(b, app.URL, app.LocalURL, options.EnableEncryptedLink, requestURL)
 	if hasIcon {
-		b.WriteString(`"><div class="app-icon">`)
+		b.WriteString(`><div class="app-icon">`)
 		b.WriteString(templateIcon)
 		b.WriteString(`</div><div class="app-text has-icon"><p class="app-title">`)
 	} else {
-		b.WriteString(`"><div class="app-text"><p class="app-title">`)
+		b.WriteString(`><div class="app-text"><p class="app-title">`)
 	}
 	b.WriteString(escapedName)
 	b.WriteString(`</p><p class="app-desc">`)

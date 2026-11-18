@@ -22,7 +22,7 @@ func renderBookmarkIcon(icon string, link string, iconMode string) string {
 	icon = strings.TrimSpace(icon)
 	var markup string
 	if strings.HasPrefix(icon, "http://") || strings.HasPrefix(icon, "https://") {
-		markup = `<img src="` + template.HTMLEscapeString(icon) + `" decoding="async" alt="">`
+		markup = `<img data-site-icon-fallback-src="` + template.HTMLEscapeString(mdi.GetIconURLByName("bookmark")) + `" src="` + template.HTMLEscapeString(icon) + `" decoding="async" alt="">`
 	} else if icon != "" {
 		markup = mdi.GetIconByName(icon)
 		if markup == "" {

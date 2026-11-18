@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "test-binary.ps1")
 
 $commonPath = Join-Path $PSScriptRoot "superflare\cmd\common.sh"
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("superflare-common-" + [System.Guid]::NewGuid().ToString("N"))
@@ -27,6 +28,7 @@ function To-ShPath([string]$path) {
 
 try {
     $null = New-Item -ItemType Directory -Path $tmpRoot -Force
+    $testBinary = Build-TestAppBinary $tmpRoot
     $bashPath = Resolve-GitBash
     $commonSh = To-ShPath $commonPath
     $tmpSh = To-ShPath $tmpRoot
@@ -48,6 +50,10 @@ TRIM_APPDEST='$tmpSh/app'
 TRIM_PKGETC='$tmpSh/etc'
 TRIM_PKGVAR='$tmpSh/var'
 . '$commonSh'
+APP_BIN='$testBinary'
+ETC_DIR="`$TRIM_PKGETC"
+CONFIG_FILE="`$ETC_DIR/config.yml"
+CONFIG_LOCK_FILE="`$ETC_DIR/.superflare-config.lock"
 
 mkdir -p "`$TRIM_PKGETC" "`$TRIM_PKGVAR/run" "`$TRIM_APPDEST/server"
 env_file="`$TRIM_PKGETC/.env"
@@ -74,6 +80,30 @@ EOF
 
 [ "`$(read_yaml_value "`$yaml_file" LoginUser)" = "old user" ] || { echo "LoginUser yaml parse failed: `$(read_yaml_value "`$yaml_file" LoginUser)"; exit 1; }
 [ "`$(read_yaml_value "`$yaml_file" LoginPass)" = "abc#123:xyz" ] || { echo "LoginPass yaml parse failed: `$(read_yaml_value "`$yaml_file" LoginPass)"; exit 1; }
+
+(
+    chmod() {
+        [ "`$#" -eq 2 ] && [ "`$1" = "go-rwx,u-x" ] && [ "`$2" = "`$env_file" ] || return 1
+        printf 'restricted\n' > "`$TRIM_PKGETC/permission-marker"
+    }
+    ensure_env_file
+    [ "`$(cat "`$TRIM_PKGETC/permission-marker")" = "restricted" ] || { echo "existing .env permissions were not restricted"; exit 1; }
+)
+(
+    chmod() { return 77; }
+    if ensure_env_file; then
+        echo "ensure_env_file masked a credential permission failure"
+        exit 1
+    fi
+    if ensure_login_config_defaults; then
+        echo "ensure_login_config_defaults masked a credential permission failure"
+        exit 1
+    fi
+    if upsert_env_value "`$env_file" FLARE_PASS should-not-write; then
+        echo "upsert_env_value wrote credentials after a permission failure"
+        exit 1
+    fi
+)
 
 missing_read_path="`$TRIM_PKGETC/missing-read-path"
 missing_value=""
@@ -106,14 +136,14 @@ fi
 
 env_parse_status=0
 (
-    parse_shell_value() { return 73; }
+    read_config_value() { return 73; }
     read_env_value "`$env_file" FLARE_USER >/dev/null
 ) || env_parse_status=`$?
 [ "`$env_parse_status" -eq 73 ] || { echo "read_env_value masked parser status 73 as `$env_parse_status"; exit 1; }
 
 yaml_parse_status=0
 (
-    parse_shell_value() { return 74; }
+    read_config_value() { return 74; }
     read_yaml_value "`$yaml_file" LoginUser >/dev/null
 ) || yaml_parse_status=`$?
 [ "`$yaml_parse_status" -eq 74 ] || { echo "read_yaml_value masked parser status 74 as `$yaml_parse_status"; exit 1; }
@@ -213,10 +243,48 @@ cat >"`$yaml_file" <<'EOF'
 LoginUser: 'custom-user'
 LoginPass: ''
 Title: "SuperFlare"
+Theme: blackboard
+Locale: zh
 EOF
 ensure_login_config_defaults
 grep -Eq "^LoginUser: 'custom-user'`$" "`$yaml_file" || { echo "yaml blank password should preserve the existing user"; cat "`$yaml_file"; exit 1; }
 grep -Eq "^LoginPass: 'admin'`$" "`$yaml_file" || { echo "yaml blank password should initialize pass to admin"; cat "`$yaml_file"; exit 1; }
+
+credential_user="user'with-quotes"
+credential_pass="'secret123"
+sync_login_config "`$credential_user" "`$credential_pass"
+ensure_login_env_defaults
+ensure_login_config_defaults
+[ "`$(read_env_value "`$env_file" FLARE_USER)" = "`$credential_user" ] || exit 1
+[ "`$(read_yaml_value "`$yaml_file" LoginUser)" = "`$credential_user" ] || exit 1
+[ "`$(read_env_value "`$env_file" FLARE_PASS)" = "`$credential_pass" ] || exit 1
+[ "`$(read_yaml_value "`$yaml_file" LoginPass)" = "`$credential_pass" ] || exit 1
+credential_pass='with"quotes\and\backslashes#;%(FLARE_USER)s'
+sync_login_config "`$credential_user" "`$credential_pass"
+ensure_login_env_defaults
+ensure_login_config_defaults
+[ "`$(read_env_value "`$env_file" FLARE_PASS)" = "`$credential_pass" ] || exit 1
+[ "`$(read_yaml_value "`$yaml_file" LoginPass)" = "`$credential_pass" ] || exit 1
+upsert_env_value "`$env_file" FLARE_PASS "`$credential_pass"
+[ "`$(read_env_value "`$env_file" FLARE_PASS)" = "`$credential_pass" ] || exit 1
+
+cp "`$env_file" "`$env_file.before-invalid"
+cp "`$yaml_file" "`$yaml_file.before-invalid"
+oversized_user="`$(printf '%257s' '' | tr ' ' x)"
+if sync_login_config "`$oversized_user" "`$credential_pass" 2>/dev/null; then
+    echo "sync_login_config accepted oversized credentials"
+    exit 1
+fi
+cmp "`$env_file" "`$env_file.before-invalid"
+cmp "`$yaml_file" "`$yaml_file.before-invalid"
+
+printf '%s\n' 'LoginPass: [malformed' > "`$yaml_file"
+cp "`$yaml_file" "`$yaml_file.before-invalid"
+if ensure_login_config_defaults 2>/dev/null; then
+    echo "malformed YAML was treated as missing credentials"
+    exit 1
+fi
+cmp "`$yaml_file" "`$yaml_file.before-invalid"
 
 lock_result_file="`$TRIM_PKGETC/lock-result"
 write_lock_result() {

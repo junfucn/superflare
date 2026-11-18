@@ -190,6 +190,7 @@ func serveUploadedBackgroundPreview(c *echo.Context) error {
 }
 
 func serveUploadedBackgroundVariant(c *echo.Context, variant string) error {
+	protectImageResponse(c)
 	data, contentType, err := background.FetchUploadedVariant(variant)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -197,7 +198,12 @@ func serveUploadedBackgroundVariant(c *echo.Context, variant string) error {
 	if currentAssetsRuntime().DebugMode {
 		c.Response().Header().Set("Cache-Control", "no-store")
 	} else {
-		c.Response().Header().Set("Cache-Control", "public, max-age=604800")
+		c.Response().Header().Set("Cache-Control", "public, no-cache")
+		etag := siteIconETag(data)
+		c.Response().Header().Set("ETag", etag)
+		if siteIconETagMatches(c.Request().Header.Get("If-None-Match"), etag) {
+			return c.NoContent(http.StatusNotModified)
+		}
 	}
 	return c.Blob(http.StatusOK, contentType, data)
 }
@@ -208,6 +214,7 @@ func serveUserAsset(c *echo.Context) error {
 }
 
 func serveUserAssetByName(c *echo.Context, fileName string) error {
+	protectImageResponse(c)
 	if fileName == "." || fileName == "" {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
@@ -233,9 +240,15 @@ func serveSiteFavicon(c *echo.Context) error {
 	if iconURL == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "missing site favicon source")
 	}
-	c.Response().Header().Set("Content-Security-Policy", siteIconContentSecurityPolicy)
-	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
-	c.Response().Header().Set("Referrer-Policy", "no-referrer")
+	protectImageResponse(c)
+	c.Response().Header().Set("Cache-Control", "private, no-store")
+	sources, err := allowedSiteIconSources(c)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "icon configuration unavailable")
+	}
+	if _, ok := sources[iconURL]; !ok {
+		return echo.NewHTTPError(http.StatusForbidden, "site favicon source is not configured or visible")
+	}
 
 	data, contentType, err := fn.FetchPublicSiteFaviconContext(c.Request().Context(), iconURL)
 	if err == nil {
@@ -244,7 +257,7 @@ func serveSiteFavicon(c *echo.Context) error {
 			c.Response().Header().Set("Cache-Control", "no-store")
 			c.Response().Header().Del("ETag")
 		} else {
-			c.Response().Header().Set("Cache-Control", "public, max-age=604800, immutable")
+			c.Response().Header().Set("Cache-Control", "private, no-cache")
 			etag = siteIconETag(data)
 			c.Response().Header().Set("ETag", etag)
 		}
@@ -293,12 +306,16 @@ func readBuiltinBookmarkIcon() ([]byte, string, error) {
 }
 
 func serveRemoteBackground(c *echo.Context) error {
+	protectImageResponse(c)
 	source := strings.TrimSpace(c.QueryParam("src"))
 	if source == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "missing background source")
 	}
+	if err := requireConfiguredBackground(c, source); err != nil {
+		return err
+	}
 
-	data, contentType, err := background.FetchRemoteVariant(source, c.QueryParam("variant"))
+	data, contentType, err := background.FetchRemoteVariantContext(c.Request().Context(), source, c.QueryParam("variant"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadGateway, "background fetch failed")
 	}

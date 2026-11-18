@@ -1,7 +1,11 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,12 +22,14 @@ import (
 	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/junfuchang/superflare/internal/statuspage"
 )
 
 const (
 	SESSION_KEY_USER_NAME  = "USER_NAME"
 	SESSION_KEY_LOGIN_DATE = "LOGIN_TIME"
+	SESSION_KEY_CREDENTIAL = "CREDENTIAL_VERSION"
 	SESSION_MAX_AGE        = 90 * 24 * 60 * 60
 )
 
@@ -275,8 +281,8 @@ func RequestHandleWithFlags(e *echo.Echo, flags model.Flags) {
 		store := sessions.NewCookieStore([]byte(cfg.CookieSecret))
 		store.MaxAge(SESSION_MAX_AGE)
 		e.Use(session.Middleware(store))
-		e.POST(define.MiscPages.Login.Path, login)
-		e.POST(define.MiscPages.Logout.Path, logout)
+		e.POST(define.MiscPages.Login.Path, login, requireSameOrigin)
+		e.POST(define.MiscPages.Logout.Path, logout, requireSameOrigin)
 	}
 }
 
@@ -378,6 +384,13 @@ func ResolveLoginDisplayState(c *echo.Context) (LoginDisplayState, error) {
 		recordSessionWarning(c, sessionWarningSessionInvalid, "empty username in login session")
 		return LoginDisplayState{}, nil
 	}
+	loginCfg := SnapshotLoginRuntimeConfigForRequest(c)
+	version, _ := sess.Values[SESSION_KEY_CREDENTIAL].(string)
+	if userName != loginCfg.User || !hmac.Equal([]byte(version), []byte(credentialVersion(getSessionRuntimeConfig(c), loginCfg))) {
+		clearSessionCookie(c)
+		recordSessionWarning(c, sessionWarningSessionInvalid, "login credentials changed; sign in again")
+		return LoginDisplayState{}, nil
+	}
 	state.ShowLoginInfo = true
 	state.UserName = userName
 	loginDateRaw := sess.Values[SESSION_KEY_LOGIN_DATE]
@@ -424,6 +437,14 @@ func validateRuntimeLoginConfig(cfg loginRuntimeConfig) error {
 	return nil
 }
 
+// Bind signed sessions to the current credentials without exposing a password
+// hash that could be used for offline guessing from the readable cookie.
+func credentialVersion(sessionCfg sessionRuntimeConfig, loginCfg loginRuntimeConfig) string {
+	mac := hmac.New(sha256.New, []byte(sessionCfg.CookieSecret))
+	_ = json.NewEncoder(mac).Encode([]string{"superflare-session-v1", sessionCfg.Name, loginCfg.User, loginCfg.Pass})
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 func newFreshSession(cfg sessionRuntimeConfig) *sessions.Session {
 	store := sessions.NewCookieStore([]byte(cfg.CookieSecret))
 	store.MaxAge(SESSION_MAX_AGE)
@@ -440,7 +461,7 @@ func buildSessionOptions(c *echo.Context, maxAge int) *sessions.Options {
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   c.Scheme() == "https",
+		Secure:   netutil.RequestScheme(c.Request()) == "https",
 	}
 }
 
@@ -454,7 +475,7 @@ func clearSessionCookie(c *echo.Context) {
 		Expires:  time.Unix(1, 0),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   c.Scheme() == "https",
+		Secure:   netutil.RequestScheme(c.Request()) == "https",
 	})
 }
 
@@ -629,7 +650,7 @@ func renderAuthHTTPError(c *echo.Context, status int, primary error, optionsErr 
 }
 
 func AuthRequired(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c *echo.Context) error {
+	return requireSameOrigin(func(c *echo.Context) error {
 		if IsLoginDisabled(c) {
 			return next(c)
 		}
@@ -640,21 +661,29 @@ func AuthRequired(next echo.HandlerFunc) echo.HandlerFunc {
 			return renderAuthHTTPError(c, http.StatusInternalServerError, err, optionsErr)
 		}
 		if !state.ShowLoginInfo {
+			if strings.Contains(strings.ToLower(c.Request().Header.Get("Accept")), "application/json") {
+				c.Response().Header().Set("Cache-Control", "no-store")
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Login expired. Please sign in again before saving.", "login": define.SettingPages.Others.Path})
+			}
 			return c.Redirect(http.StatusFound, sessionWarningRedirectTarget(c, define.SettingPages.Others.Path))
 		}
 		return next(c)
-	}
+	})
 }
 
 func login(c *echo.Context) error {
+	form, err := readLoginForm(c)
+	if err != nil {
+		return err
+	}
 	optionsErr := bindAuthStatusOptions(c)
 	sess, err := getSession(c)
 	if err != nil {
 		log.Println("failed to get login session:", err)
 		return renderAuthStatusPage(c, http.StatusInternalServerError, statuspage.BuildAuthSessionSaveErrorPage(statuspage.CurrentLocale(c)), optionsErr)
 	}
-	username := c.FormValue("username")
-	password := c.FormValue("password")
+	username := form.Get("username")
+	password := form.Get("password")
 
 	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
 		return renderAuthStatusPage(c, http.StatusBadRequest, statuspage.BuildAuthEmptyCredentialsPage(statuspage.CurrentLocale(c)), optionsErr)
@@ -672,6 +701,7 @@ func login(c *echo.Context) error {
 
 	sess.Values[SESSION_KEY_USER_NAME] = username
 	sess.Values[SESSION_KEY_LOGIN_DATE] = time.Now().Format("2006-01-02 15:04:05 MST")
+	sess.Values[SESSION_KEY_CREDENTIAL] = credentialVersion(getSessionRuntimeConfig(c), loginCfg)
 	sess.Options = buildSessionOptions(c, SESSION_MAX_AGE)
 
 	if err := persistSession(sess, c.Request(), c.Response()); err != nil {

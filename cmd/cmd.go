@@ -108,7 +108,7 @@ func ApplyAccountConfigToFlagsE(flags model.Flags, options model.Application) (m
 }
 
 func applyAccountConfig(flags model.Flags) (model.Flags, error) {
-	if err := data.EnsureAppConfigExists(); err != nil {
+	if err := data.EnsureAppConfigExistsWithLogin(flags.User, flags.Pass); err != nil {
 		return flags, fmt.Errorf("read account config failed: %w", err)
 	}
 	user, pass, err := data.GetLoginConfig()

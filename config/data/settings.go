@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/junfuchang/superflare/config/model"
@@ -130,6 +131,12 @@ func UpdateSearch(showSearchComponent bool, disabledSearchAutoFocus bool, search
 		}
 		options.SearchEngineOpenMode = searchEngineOpenMode
 		options.SearchEngineCustomTemplate = strings.TrimSpace(searchEngineCustomTemplate)
+		if strings.EqualFold(strings.TrimSpace(searchMode), searchModeEngine) &&
+			strings.EqualFold(strings.TrimSpace(searchEngine), searchEngineCustom) {
+			if _, err := validation.BuildSearchURL(options.SearchEngineCustomTemplate, "example"); err != nil {
+				return model.Application{}, err
+			}
+		}
 		if err := validateSettingsOptions(options); err != nil {
 			return model.Application{}, err
 		}
@@ -178,6 +185,7 @@ func normalizeSettingsOptions(options model.Application) (model.Application, err
 		options.GlassEffect = "none"
 	}
 	options.SiteURL = strings.TrimRight(strings.TrimSpace(options.SiteURL), "/")
+	options.LocalNetworkURL, _ = NormalizeLocalNetworkURL(options.LocalNetworkURL)
 	options.SEODescription = strings.TrimSpace(options.SEODescription)
 	options.SEOKeywords = strings.TrimSpace(options.SEOKeywords)
 	options.SEOImage = strings.TrimSpace(options.SEOImage)
@@ -186,6 +194,9 @@ func normalizeSettingsOptions(options model.Application) (model.Application, err
 }
 
 func validateSettingsOptions(options model.Application) error {
+	if _, err := NormalizeLocalNetworkURL(options.LocalNetworkURL); err != nil {
+		return err
+	}
 	locale := strings.TrimSpace(options.Locale)
 	if locale != "" {
 		normalized := i18n.NormalizeLocale(locale)
@@ -323,6 +334,9 @@ func validateSettingsOptions(options model.Application) error {
 		if parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery {
 			return fmt.Errorf("invalid site url value: %s", options.SiteURL)
 		}
+		if !validation.IsValidHTTPURL(siteURL) {
+			return fmt.Errorf("invalid site url value: %s", options.SiteURL)
+		}
 	}
 	if seoImage := strings.TrimSpace(options.SEOImage); seoImage != "" && !isValidSEOImage(seoImage) {
 		return fmt.Errorf("invalid seo image value: %s", options.SEOImage)
@@ -342,10 +356,10 @@ func validateSettingsOptions(options model.Application) error {
 
 func isValidSEOImage(raw string) bool {
 	if strings.HasPrefix(raw, "/") {
-		return true
+		return !strings.HasPrefix(raw, "//") && !strings.Contains(raw, `\`) && strings.IndexFunc(raw, unicode.IsControl) < 0
 	}
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" {
+	if err != nil || parsed.Host == "" || !validation.IsValidHTTPURL(raw) {
 		return false
 	}
 	scheme := strings.ToLower(parsed.Scheme)
@@ -353,6 +367,15 @@ func isValidSEOImage(raw string) bool {
 }
 
 func UpdateAppearance(update model.Application) error {
+	return UpdateAppearanceWithOptionalGreetings(update, &update.Greetings)
+}
+
+// UpdateAppearanceWithOptionalGreetings preserves saved greetings when the form omits them.
+func UpdateAppearanceWithOptionalGreetings(update model.Application, greetings *string) error {
+	return UpdateAppearanceWithOptionalNetwork(update, greetings, nil)
+}
+
+func UpdateAppearanceWithOptionalNetwork(update model.Application, greetings *string, localNetworkURL *string) error {
 	if err := EnsureAppConfigExists(); err != nil {
 		return err
 	}
@@ -363,8 +386,17 @@ func UpdateAppearance(update model.Application) error {
 		options.SiteIconMode = update.SiteIconMode
 		options.OpenAppNewTab = update.OpenAppNewTab
 		options.OpenBookmarkNewTab = update.OpenBookmarkNewTab
+		if localNetworkURL != nil {
+			value, err := NormalizeLocalNetworkURL(*localNetworkURL)
+			if err != nil {
+				return options, err
+			}
+			options.LocalNetworkURL = value
+		}
 		options.ShowTitle = update.ShowTitle
-		options.Greetings = update.Greetings
+		if greetings != nil {
+			options.Greetings = *greetings
+		}
 		options.ShowDateTime = update.ShowDateTime
 		options.ShowApps = update.ShowApps
 		options.ShowFavorites = update.ShowFavorites

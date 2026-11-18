@@ -54,8 +54,8 @@ func TestHomeTemplateUsesAppsSurfaceAndBodyLevelApplicationSubdirectoryModals(t 
 	for _, expected := range []string{
 		`class="apps-container clearfix apps-surface"`,
 		`{{.ApplicationSubdirectoryModals}}`,
-		`{{ if and .OptionShowApps .InlineApplicationSubdirectoryModalScript }}`,
-		`<script nonce="{{.ScriptNonce}}">{{.InlineApplicationSubdirectoryModalScript}}</script>`,
+		`{{ if .InlineHomeDialogScript }}`,
+		`<script nonce="{{.ScriptNonce}}">{{.InlineHomeDialogScript}}</script>`,
 	} {
 		if !strings.Contains(page, expected) {
 			t.Fatalf("home template missing %q", expected)

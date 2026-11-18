@@ -43,7 +43,7 @@ func updateSEOOptions(c *echo.Context) error {
 	if err := data.UpdateSEO(update); err != nil {
 		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, err.Error()))
 	}
-	return pageSEO(c)
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.SEO.Path)
 }
 
 func pageSEO(c *echo.Context) error {
@@ -99,5 +99,5 @@ func pageSEO(c *echo.Context) error {
 	m["OptionSiteIcon"] = options.SiteIcon
 	footer.BindTemplateData(m, options.Footer)
 	m["RenderWarnings"] = renderWarnings
-	return c.Render(http.StatusOK, "settings.html", m)
+	return settingsroot.Render(c, http.StatusOK, m)
 }

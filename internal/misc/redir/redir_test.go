@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/junfuchang/superflare/config/data"
+	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/fn"
 	"github.com/labstack/echo/v5"
@@ -20,7 +22,7 @@ func TestBookmarksContainLocalPairWithDynamicURL(t *testing.T) {
 	bookmarks := []model.Bookmark{
 		{URL: "{origin}/app", LocalURL: "http://192.168.1.20/app"},
 	}
-	if !bookmarksContainLocalPair(bookmarks, &requestURL, "http://192.168.1.10:3636/app", "http://192.168.1.20/app") {
+	if !bookmarksContainLocalPair(bookmarks, &requestURL, "http://192.168.1.10:3636/app", "http://192.168.1.20/app", false) {
 		t.Fatal("expected bookmark local URL pair to match")
 	}
 }
@@ -34,14 +36,17 @@ func TestRenderLocalRedirectPageContainsFallbackAndLocalURL(t *testing.T) {
 	for _, token := range []string{
 		"https://public.example.com/app",
 		"http://192.168.1.20/app",
-		"Use source address",
-		"fetch(localURL",
-		"var seconds=3",
-		"startFallbackCountdown",
+		"Source address",
+		"credentials: \"omit\"",
+		"value.id === config.id",
+		"window.location.replace",
 	} {
 		if !strings.Contains(page, token) {
 			t.Fatalf("redirect page missing %q in %s", token, page)
 		}
+	}
+	if strings.Contains(page, "no-cors") || strings.Contains(page, "startFallbackCountdown") {
+		t.Fatal("redirect must not use opaque service probes or a fallback countdown")
 	}
 }
 
@@ -53,9 +58,9 @@ func TestRenderLocalRedirectPageDefaultsToChinese(t *testing.T) {
 	page := string(raw)
 	for _, token := range []string{
 		`lang="zh-CN"`,
-		"正在连接内网地址",
-		"打开源书签地址",
-		"秒后打开源书签地址",
+		"正在打开书签",
+		"源地址",
+		"data-network-manual",
 	} {
 		if !strings.Contains(page, token) {
 			t.Fatalf("redirect page missing %q in %s", token, page)
@@ -71,8 +76,8 @@ func TestRenderLocalRedirectPageUsesEnglishLocale(t *testing.T) {
 	page := string(raw)
 	for _, token := range []string{
 		`lang="en"`,
-		"Connecting to the local address",
-		"Opening the source bookmark in ",
+		"Opening bookmark",
+		"Source address",
 	} {
 		if !strings.Contains(page, token) {
 			t.Fatalf("redirect page missing %q in %s", token, page)
@@ -266,9 +271,6 @@ func TestRedirLocalReturnsStyledServerErrorWhenSettingsConfigBroken(t *testing.T
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	originalRequestLooksLocalNetwork := requestLooksLocalNetwork
-	requestLooksLocalNetwork = func(r *http.Request) bool { return true }
-	defer func() { requestLooksLocalNetwork = originalRequestLooksLocalNetwork }()
 	tmpDir := t.TempDir()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("chdir: %v", err)
@@ -299,20 +301,23 @@ func TestRedirLocalReturnsStyledServerErrorWhenSettingsConfigBroken(t *testing.T
 	}
 }
 
-func TestRedirLocalRedirectsToSourceWhenLocalURLCannotShareNetwork(t *testing.T) {
+func TestRedirLocalChecksIdentityAcrossSubnets(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	originalRequestLooksLocalNetwork := requestLooksLocalNetwork
-	requestLooksLocalNetwork = func(r *http.Request) bool { return true }
-	defer func() { requestLooksLocalNetwork = originalRequestLooksLocalNetwork }()
 	tmpDir := t.TempDir()
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
 	defer func() { _ = os.Chdir(origWd) }()
 
+	if err := data.EnsureAppConfigExists(); err != nil {
+		t.Fatal(err)
+	}
+	if err := define.UpdatePagePalettes(); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "apps.yml"), []byte("links:\n- name: App A\n  link: https://public.example.com/app\n  local_link: http://192.168.10.1/app\n"), 0644); err != nil {
 		t.Fatalf("write apps.yml: %v", err)
 	}
@@ -325,11 +330,11 @@ func TestRedirLocalRedirectsToSourceWhenLocalURLCannotShareNetwork(t *testing.T)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusFound {
-		t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected browser detection page, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if location := rec.Header().Get("Location"); location != "https://public.example.com/app" {
-		t.Fatalf("unexpected redirect location: %s", location)
+	if !strings.Contains(rec.Body.String(), "value.id === config.id") {
+		t.Fatal("missing identity validation")
 	}
 }
 

@@ -56,17 +56,20 @@ func updateLoginOptions(c *echo.Context) error {
 	if pass != confirm {
 		return renderOthers(c, "login_pass_confirm_error")
 	}
+	if err := data.ValidateLoginCredentialPair(user, pass, "login config update"); err != nil {
+		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, err.Error()))
+	}
 	runtimeLoginConfig := auth.SnapshotLoginRuntimeConfigForRequest(c)
 	credentialsChanged := user != strings.TrimSpace(runtimeLoginConfig.User) || pass != strings.TrimSpace(runtimeLoginConfig.Pass)
-	if err := data.UpdateLoginConfig(user, pass); err != nil {
+	if err := data.UpdateLoginConfigWithCallback(user, pass, func() {
+		applyRuntimeLoginConfig(c, user, pass)
+	}); err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	applyRuntimeLoginConfig(c, user, pass)
 	if credentialsChanged {
 		auth.InvalidateCurrentLoginSession(c)
-		return c.Redirect(http.StatusFound, define.SettingPages.Others.Path)
 	}
-	return pageOthers(c)
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.Others.Path)
 }
 
 func applyRuntimeLoginConfig(c *echo.Context, user string, pass string) {
@@ -170,7 +173,7 @@ func renderOthers(c *echo.Context, loginConfigError string) error {
 	m["Version"] = appver.DisplayVersion()
 	footer.BindTemplateData(m, options.Footer)
 	m["RenderWarnings"] = renderWarnings
-	return c.Render(http.StatusOK, "settings.html", m)
+	return settingsroot.Render(c, http.StatusOK, m)
 }
 
 func loginCredentialsAreDefault(user string, pass string) bool {

@@ -45,7 +45,13 @@ func TestCustomScriptsSaveRenderAndClear(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusSeeOther, rec.Code, rec.Body.String())
+		target := rec.Header().Get("Location")
+		require.Equal(t, "/settings/scripts?saved=1", target)
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.Contains(t, rec.Body.String(), `class="settings-save-notice"`)
 		return rec
 	}
 
@@ -157,7 +163,7 @@ func TestCustomScriptsRequiresLogin(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusSeeOther, rec.Code, rec.Body.String())
 	options, err = data.GetAllSettingsOptions()
 	require.NoError(t, err)
 	require.Equal(t, customScriptsFixture, options.CustomScripts)

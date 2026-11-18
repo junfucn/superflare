@@ -877,19 +877,14 @@ func (failingSessionStore) Save(*http.Request, http.ResponseWriter, *sessions.Se
 
 func authenticatedCookie(t *testing.T, flags model.Flags) *http.Cookie {
 	t.Helper()
-	store := sessions.NewCookieStore([]byte(flags.CookieSecret))
-	store.MaxAge(auth.SESSION_MAX_AGE)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	sess, err := store.New(req, auth.RequestHandleSessionName(flags.CookieName, flags.Port))
-	if err != nil {
-		t.Fatalf("create authenticated session: %v", err)
-	}
-	sess.Values[auth.SESSION_KEY_USER_NAME] = "admin"
-	sess.Values[auth.SESSION_KEY_LOGIN_DATE] = "2026-07-15 12:00:00 CST"
-	sess.Options = &sessions.Options{Path: "/", MaxAge: auth.SESSION_MAX_AGE}
+	e := echo.New()
+	auth.RequestHandleWithFlags(e, flags)
+	req := httptest.NewRequest(http.MethodPost, define.MiscPages.Login.Path, strings.NewReader(url.Values{"username": {flags.User}, "password": {flags.Pass}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
-	if err := store.Save(req, rec, sess); err != nil {
-		t.Fatalf("save authenticated session: %v", err)
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("login returned %d: %s", rec.Code, rec.Body.String())
 	}
 	cookies := rec.Result().Cookies()
 	if len(cookies) != 1 {
@@ -1187,9 +1182,9 @@ func (r applicationSubdirectoryRenderer) Render(c *echo.Context, _ io.Writer, _ 
 	if !ok {
 		r.t.Fatalf("expected HasApplicationSubdirectories bool, got %T", m["HasApplicationSubdirectories"])
 	}
-	modalScript, ok := m["InlineApplicationSubdirectoryModalScript"].(template.JS)
+	modalScript, ok := m["InlineHomeDialogScript"].(template.JS)
 	if !ok {
-		r.t.Fatalf("expected InlineApplicationSubdirectoryModalScript JS, got %T", m["InlineApplicationSubdirectoryModalScript"])
+		r.t.Fatalf("expected InlineHomeDialogScript JS, got %T", m["InlineHomeDialogScript"])
 	}
 	nonce, ok := m["ScriptNonce"].(string)
 	if !ok {
@@ -1217,8 +1212,8 @@ func (r applicationSubdirectoryRenderer) Render(c *echo.Context, _ io.Writer, _ 
 		`event.key!=="Tab"`,
 		`origin.closest(closeSelector)`,
 		`event.preventDefault();closeActiveModal();return;`,
-		`window.location.hash=""`,
-		`window.setTimeout(function(){trigger.focus({preventScroll:true});},0)`,
+		`window.history.back()`,
+		`window.history.replaceState(window.history.state,"",pageURL.href)`,
 		`setAttribute("inert","")`,
 		`panel.focus({preventScroll:true})`,
 		`trigger.focus({preventScroll:true})`,
@@ -1227,7 +1222,7 @@ func (r applicationSubdirectoryRenderer) Render(c *echo.Context, _ io.Writer, _ 
 			r.t.Fatalf("application subdirectory modal script missing %q: %s", expected, modalScript)
 		}
 	}
-	for _, unexpected := range []string{`history.replaceState`, `querySelector(window.location.hash)`} {
+	for _, unexpected := range []string{`querySelector(window.location.hash)`} {
 		if strings.Contains(string(modalScript), unexpected) {
 			r.t.Fatalf("application subdirectory modal script must not contain %q: %s", unexpected, modalScript)
 		}
@@ -1623,7 +1618,7 @@ func TestInlineSiteIconRefreshScriptPrioritizesVisibleIconsBeforeSubmenuPrefetch
 		`return Promise.all(recovery);`,
 		`loadGroups(entries).then(finishForeground,finishForeground)`,
 		`window.requestIdleCallback(run,{timeout:1000})`,
-		`entries.length>=4`,
+		`entries.length>=8`,
 		`loadGroups(entries,true).then(finish,finish)`,
 		`img.fetchPriority="low";img.loading="eager";`,
 	} {
@@ -1636,7 +1631,7 @@ func TestInlineSiteIconRefreshScriptPrioritizesVisibleIconsBeforeSubmenuPrefetch
 func TestInlineSiteIconRefreshScriptFallsBackWhenDirectCachedIconFails(t *testing.T) {
 	script := string(inlineSiteIconRefreshScript(model.Application{IconMode: define.IconModeMissingFill}))
 	for _, expected := range []string{
-		`querySelectorAll("img[data-site-icon-direct][data-site-icon-fallback-src]")`,
+		`querySelectorAll("img[data-site-icon-fallback-src]")`,
 		`img.addEventListener("error",useFallback,{once:true})`,
 		`img.complete&&img.naturalWidth===0`,
 		`img.src=fallback`,
@@ -1750,7 +1745,7 @@ func TestResolveHomeAssetsReturnsErrorWhenUploadedBackgroundMissing(t *testing.T
 	}
 }
 
-func TestPageHomeReturnsStyledErrorWhenUploadedBackgroundMissing(t *testing.T) {
+func TestPublicPagesRenderWhenUploadedBackgroundMissing(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -1778,23 +1773,41 @@ func TestPageHomeReturnsStyledErrorWhenUploadedBackgroundMissing(t *testing.T) {
 		t.Fatalf("write bookmarks.yml: %v", err)
 	}
 
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	for _, tc := range []struct {
+		path    string
+		handler echo.HandlerFunc
+	}{
+		{"/", pageHome},
+		{"/apps", pageApplication},
+		{"/bookmarks", pageBookmark},
+		{"/help", renderHelp},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			e := echo.New()
+			e.Renderer = missingBackgroundRenderer{t: t}
+			rec := httptest.NewRecorder()
+			c := e.NewContext(httptest.NewRequest(http.MethodGet, tc.path, nil), rec)
+			if err := tc.handler(c); err != nil {
+				t.Fatalf("render page: %v", err)
+			}
+			assert.Equal(t, http.StatusOK, rec.Code)
+			assert.Equal(t, "ok", rec.Body.String())
+		})
+	}
+}
 
-	if err := pageHome(c); err != nil {
-		t.Fatalf("pageHome: %v", err)
-	}
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "status-panel") {
-		t.Fatalf("expected styled status page, got %s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "500") {
-		t.Fatalf("expected 500 status content, got %s", rec.Body.String())
-	}
+type missingBackgroundRenderer struct{ t *testing.T }
+
+func (r missingBackgroundRenderer) Render(c *echo.Context, w io.Writer, name string, data any) error {
+	r.t.Helper()
+	m := data.(map[string]any)
+	assert.Equal(r.t, "home.html", name)
+	assert.Equal(r.t, false, m["HasBackgroundAssets"])
+	assert.Equal(r.t, true, m["HasRenderWarnings"])
+	assert.Empty(r.t, m["BackgroundHTML"])
+	assert.Contains(r.t, strings.Join(m["RenderWarnings"].([]string), "\n"), "上传的背景图片不可用")
+	_, err := io.WriteString(w, "ok")
+	return err
 }
 
 func TestPageAppearanceUsesPreviewDataURL(t *testing.T) {
@@ -1861,7 +1874,7 @@ func TestApplicationSubdirectoryModalStyleContracts(t *testing.T) {
 		`.application-subdirectory-header {`,
 		`.application-subdirectory-close {`,
 		`.application-subdirectory-content {`,
-		`body:has(.application-subdirectory-modal:target) {`,
+		`body:not([data-home-dialog-ready]):has(.application-subdirectory-modal:target) {`,
 	} {
 		if !strings.Contains(style, expected) {
 			t.Errorf("generated home CSS missing %q", expected)
@@ -1883,7 +1896,7 @@ func TestApplicationSubdirectoryModalStyleContracts(t *testing.T) {
 		{name: "target visibility", css: `.application-subdirectory-modal:target {visibility: visible;opacity: 1;pointer-events: auto;`},
 		{name: "bounded panel", css: `.application-subdirectory-panel {position: relative;z-index: 1;display: flex;flex-direction: column;width: min(760px, calc(100vw - 32px));min-width: min(420px, calc(100vw - 32px));max-width: min(760px, calc(100vw - 32px));height: min(68vh, 680px);min-height: min(320px, calc(100vh - 32px));max-height: min(82vh, 760px);overflow: hidden;`},
 		{name: "scrollable content", css: `.application-subdirectory-content {flex: 1 1 auto;min-height: 0;overflow: auto;overscroll-behavior: contain;}`},
-		{name: "body scroll lock", css: `body:has(.application-subdirectory-modal:target) {overflow: hidden;}`},
+		{name: "body scroll lock without JavaScript", css: `body:not([data-home-dialog-ready]):has(.application-subdirectory-modal:target) {overflow: hidden;}`},
 	}
 	for _, contract := range contracts {
 		if !strings.Contains(style, contract.css) {
@@ -2644,7 +2657,7 @@ func TestPageHomeSanitizesCustomFooterBeforeRender(t *testing.T) {
 	}
 }
 
-func TestPageSearchReturnsStyledBadRequestWhenFormDataMissing(t *testing.T) {
+func TestPageSearchReturnsStyledErrorForUnsupportedContentType(t *testing.T) {
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -2668,14 +2681,14 @@ func TestPageSearchReturnsStyledBadRequestWhenFormDataMissing(t *testing.T) {
 	if err := pageSearch(c); err != nil {
 		t.Fatalf("pageSearch: %v", err)
 	}
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415, got %d", rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "status-panel") {
 		t.Fatalf("expected styled status page, got %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "missing form data") {
-		t.Fatalf("expected missing form data detail, got %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "Search requires a URL-encoded form") {
+		t.Fatalf("expected content type detail, got %s", rec.Body.String())
 	}
 }
 
@@ -3149,7 +3162,7 @@ func (r homeSearchHintRendererI18n) Render(c *echo.Context, w io.Writer, name st
 			r.t.Fatalf("unexpected template data type %T", data)
 		}
 	}
-	placeholder, _ := m["SearchKeyword"].(template.HTML)
+	placeholder, _ := m["SearchKeyword"].(string)
 	label, _ := m["SearchHintLabel"].(string)
 	if string(placeholder) != i18n.Tf("zh", "search_engine_placeholder", "Google") {
 		r.t.Fatalf("expected Google search placeholder, got %q", string(placeholder))
@@ -3170,7 +3183,7 @@ func (r homeSearchHintTargetRenderer) Render(c *echo.Context, w io.Writer, name 
 			r.t.Fatalf("unexpected template data type %T", data)
 		}
 	}
-	placeholder, _ := m["SearchKeyword"].(template.HTML)
+	placeholder, _ := m["SearchKeyword"].(string)
 	label, _ := m["SearchHintLabel"].(string)
 	target, _ := m["SearchFormTarget"].(string)
 	rel, _ := m["SearchFormRel"].(string)
@@ -3447,7 +3460,7 @@ func TestApplicationProjectionEscapesDirectoryNamesAndUsesGeneratedIDs(t *testin
 		`id="application-subdir-modal-0"`,
 		`id="application-subdir-title-0"`,
 		`aria-labelledby="application-subdir-title-0"`,
-		`class="application-subdirectory-backdrop" aria-label="Close" tabindex="-1" aria-hidden="true"`,
+		`class="application-subdirectory-backdrop" tabindex="-1" aria-hidden="true"`,
 		`class="application-subdirectory-panel" tabindex="-1" role="dialog"`,
 	} {
 		if !strings.Contains(mainHTML+modalHTML, expected) {

@@ -93,8 +93,8 @@ func TestUpdateSEOOptionsPersistsValues(t *testing.T) {
 	if err := updateSEOOptions(c); err != nil {
 		t.Fatalf("updateSEOOptions: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 
 	options, err := data.GetAllSettingsOptions()

@@ -30,9 +30,12 @@ import (
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
+	"github.com/junfuchang/superflare/internal/background"
+	"github.com/junfuchang/superflare/internal/fn"
 	"github.com/junfuchang/superflare/internal/footer"
+	"github.com/junfuchang/superflare/internal/i18n"
+	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/junfuchang/superflare/internal/pool"
-	portscollector "github.com/junfuchang/superflare/internal/ports"
 	"github.com/junfuchang/superflare/internal/statuspage"
 )
 
@@ -41,6 +44,7 @@ var marshalEditorPortsJSON = json.Marshal
 var resolveRestoreConfigPath = restoreConfigPathErr
 var refreshPagePaletteCache = define.UpdatePagePalettes
 var syncRestoreTempFile = func(file *os.File) error { return file.Sync() }
+var renameRestoreFile = os.Rename
 
 const _ASSETS_BASE_DIR = "assets/editor"
 const _ASSETS_WEB_URI = "/" + _ASSETS_BASE_DIR
@@ -49,8 +53,11 @@ const linkCheckWorkerCount = 8
 const linkCheckRequestTimeout = 2 * time.Second
 const linkCheckOverallTimeout = 4 * time.Second
 const linkCheckRetryDelay = 120 * time.Millisecond
-const restoreUploadMaxBytes = 16 * 1024 * 1024
-const restoreZipEntryMaxBytes = 8 * 1024 * 1024
+const restoreUploadMaxBytes = 64 * 1024 * 1024
+const restoreRequestMaxBytes = restoreUploadMaxBytes + (1 << 20)
+const restoreZipEntryMaxBytes = data.MaxConfigFileSize
+const restoreBackgroundMaxBytes = 32 * 1024 * 1024
+const backupBackgroundPrefix = "uploads/background-source"
 const restoreZipMaxEntries = 256
 const editorNoticeQueryKey = "notice"
 const editorNoticeSaveSuccess = "save_success"
@@ -231,104 +238,197 @@ func resolveEditorOperationNotice(locale string, code string) map[string]string 
 
 func updateData(c *echo.Context) error {
 	var body struct {
-		Categories string `form:"categories"`
-		Bookmarks  string `form:"bookmarks"`
+		Categories *string `form:"categories"`
+		Bookmarks  *string `form:"bookmarks"`
+		Revision   string  `form:"revision"`
 	}
-	if err := c.Bind(&body); err != nil {
+	if err := c.Bind(&body); err != nil || body.Categories == nil || body.Bookmarks == nil {
 		if editorWantsJSON(c) {
 			return c.JSON(http.StatusBadRequest, editorJSONError("missing form data"))
 		}
 		return renderEditorErrorPage(c, http.StatusBadRequest, fmt.Errorf("missing form data"))
 	}
-	if err := data.UpdateBookmarksFromEditor(body.Categories, body.Bookmarks); err != nil {
-		if editorWantsJSON(c) {
-			return c.JSON(http.StatusBadRequest, editorJSONError(err.Error()))
+	revision, err := data.UpdateBookmarksFromEditorWithRevision(*body.Categories, *body.Bookmarks, body.Revision)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, data.ErrEditorRevisionConflict) {
+			status = http.StatusConflict
+			message := "数据已在其他页面或配置文件中修改。请先复制保留当前修改，再刷新编辑器并合并最新数据后保存。"
+			if options, loadErr := data.GetAllSettingsOptions(); loadErr == nil && options.Locale == "en" {
+				message = "Data changed elsewhere. Copy your changes before reloading the editor, then merge them with the latest data."
+			}
+			err = errors.New(message)
 		}
-		return renderEditorErrorPage(c, http.StatusBadRequest, err)
+		if editorWantsJSON(c) {
+			return c.JSON(status, editorJSONError(err.Error()))
+		}
+		return renderEditorErrorPage(c, status, err)
 	}
 	if editorWantsJSON(c) {
-		return c.JSON(http.StatusOK, map[string]string{"notice": editorNoticeSaveSuccess})
+		return c.JSON(http.StatusOK, map[string]string{"notice": editorNoticeSaveSuccess, "revision": revision})
 	}
 	return c.Redirect(http.StatusFound, buildEditorNoticeRedirectURL(editorNoticeSaveSuccess))
 }
 
 func backupData(c *echo.Context) error {
+	raw, err := buildBackupArchive()
+	if err != nil {
+		return renderEditorErrorPage(c, http.StatusInternalServerError, err)
+	}
+	filename := "superflare-backup-" + time.Now().Format("20060102-150405") + ".zip"
+	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+filename+`"`)
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.Blob(http.StatusOK, "application/zip", raw)
+}
+
+func buildBackupArchive() ([]byte, error) {
+	var raw []byte
+	err := background.WithUploadedBackgroundLock(func() error {
+		return data.WithConfigWriteLock(func() error {
+			var err error
+			raw, err = buildBackupArchiveLocked()
+			return err
+		})
+	})
+	return raw, err
+}
+
+func buildBackupArchiveLocked() ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
+	defer zw.Close()
+	var configRaw []byte
 	for _, name := range []string{"config", "bookmarks", "apps", "ports"} {
 		path, pathErr := resolveRestoreConfigPath(name)
 		if pathErr != nil {
-			_ = zw.Close()
-			return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("resolve backup source path failed: %s: %w", name, pathErr))
+			return nil, fmt.Errorf("resolve backup source path failed: %s: %w", name, pathErr)
 		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
-				_ = zw.Close()
-				return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("backup source file is missing: %s", path))
+				return nil, fmt.Errorf("backup source file is missing: %s", path)
 			}
-			_ = zw.Close()
-			return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("read backup source file failed: %s: %w", path, err))
+			return nil, fmt.Errorf("read backup source file failed: %s: %w", path, err)
 		}
 		if len(raw) == 0 {
-			_ = zw.Close()
-			return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("backup source file is empty: %s", path))
+			return nil, fmt.Errorf("backup source file is empty: %s", path)
+		}
+		if len(raw) > restoreZipEntryMaxBytes {
+			return nil, fmt.Errorf("backup source file exceeds restore limit: %s", path)
+		}
+		if name == "config" {
+			configRaw = raw
 		}
 		w, err := zw.Create(restoreConfigFileName(name))
 		if err != nil {
-			_ = zw.Close()
-			return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("create backup archive entry failed: %w", err))
+			return nil, fmt.Errorf("create backup archive entry failed: %w", err)
 		}
 		if _, err := w.Write(raw); err != nil {
-			_ = zw.Close()
-			return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("write backup archive entry failed: %w", err))
+			return nil, fmt.Errorf("write backup archive entry failed: %w", err)
+		}
+	}
+	options, err := data.LoadAppConfigFromRaw(configRaw)
+	if err != nil {
+		return nil, fmt.Errorf("read backup configuration failed: %w", err)
+	}
+	if background.UsesUploadedBackground(options) {
+		name, raw, err := background.ReadUploadedBackgroundSource()
+		if err != nil {
+			return nil, fmt.Errorf("read backup background failed: %w", err)
+		}
+		name = "uploads/" + name
+		if !isBackupBackgroundName(name) {
+			return nil, fmt.Errorf("unsupported backup background format")
+		}
+		entry, err := zw.Create(name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := entry.Write(raw); err != nil {
+			return nil, err
 		}
 	}
 	if err := zw.Close(); err != nil {
-		return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("finalize backup archive failed: %w", err))
+		return nil, fmt.Errorf("finalize backup archive failed: %w", err)
 	}
-	filename := "superflare-backup-" + time.Now().Format("20060102-150405") + ".zip"
-	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+filename+`"`)
-	return c.Blob(http.StatusOK, "application/zip", buf.Bytes())
+	if buf.Len() > restoreUploadMaxBytes {
+		return nil, fmt.Errorf("backup exceeds restore upload limit")
+	}
+	return buf.Bytes(), nil
 }
 
 func restoreData(c *echo.Context) error {
+	fail := func(status int, err error) error {
+		if editorWantsJSON(c) {
+			return c.JSON(status, editorJSONError(err.Error()))
+		}
+		return renderEditorErrorPage(c, status, err)
+	}
+	req := c.Request()
+	if req.ContentLength > restoreRequestMaxBytes {
+		return fail(http.StatusRequestEntityTooLarge, fmt.Errorf("backup request too large"))
+	}
+	if err := netutil.SetUploadDeadlines(c.Response()); err != nil {
+		return fail(http.StatusInternalServerError, err)
+	}
+	req.Body = http.MaxBytesReader(c.Response(), req.Body, restoreRequestMaxBytes)
+	defer func() {
+		if req.MultipartForm != nil {
+			_ = req.MultipartForm.RemoveAll()
+		}
+	}()
 	file, err := c.FormFile("backup")
 	if err != nil {
-		return renderEditorErrorPage(c, http.StatusBadRequest, fmt.Errorf("missing backup file"))
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return fail(http.StatusRequestEntityTooLarge, fmt.Errorf("backup request too large"))
+		}
+		return fail(http.StatusBadRequest, fmt.Errorf("missing backup file"))
+	}
+	zipped := strings.HasSuffix(strings.ToLower(file.Filename), ".zip")
+	fileLimit := int64(restoreZipEntryMaxBytes)
+	if zipped {
+		fileLimit = restoreUploadMaxBytes
+	}
+	if file.Size > fileLimit {
+		return fail(http.StatusRequestEntityTooLarge, fmt.Errorf("backup file too large (limit %d MiB)", fileLimit>>20))
 	}
 	src, err := file.Open()
 	if err != nil {
-		return renderEditorErrorPage(c, http.StatusBadRequest, fmt.Errorf("open backup file failed: %w", err))
+		return fail(http.StatusBadRequest, fmt.Errorf("open backup file failed: %w", err))
 	}
 	defer src.Close()
-	raw, err := io.ReadAll(io.LimitReader(src, restoreUploadMaxBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(src, fileLimit+1))
 	if err != nil {
-		return renderEditorErrorPage(c, http.StatusBadRequest, fmt.Errorf("read backup file failed: %w", err))
+		return fail(http.StatusBadRequest, fmt.Errorf("read backup file failed: %w", err))
 	}
 
-	if len(raw) > restoreUploadMaxBytes {
-		return renderEditorErrorPage(c, http.StatusBadRequest, fmt.Errorf("backup file too large"))
+	if int64(len(raw)) > fileLimit {
+		return fail(http.StatusRequestEntityTooLarge, fmt.Errorf("backup file too large (limit %d MiB)", fileLimit>>20))
 	}
-	if strings.HasSuffix(strings.ToLower(file.Filename), ".zip") {
+	if zipped {
 		if err := restoreZip(raw); err != nil {
-			return renderEditorErrorPage(c, http.StatusBadRequest, err)
+			return fail(http.StatusBadRequest, err)
 		}
-		refreshRequestLoginRuntime(c)
-		return c.Redirect(http.StatusFound, buildEditorNoticeRedirectURL(editorNoticeRestoreSuccess))
+	} else {
+		name := normalizeRestoreFileName(file.Filename)
+		if !isRestoreConfigName(name) {
+			return fail(http.StatusBadRequest, fmt.Errorf("only config/bookmarks/apps/ports yml-yaml files or zip backups are supported"))
+		}
+		if err := validateRestorePayload(name, raw); err != nil {
+			return fail(http.StatusBadRequest, err)
+		}
+		if err := writeRestoreFilesAtomically(map[string][]byte{name: raw}); err != nil {
+			return fail(http.StatusInternalServerError, fmt.Errorf("restore backup failed: %w", err))
+		}
 	}
 
-	name := normalizeRestoreFileName(file.Filename)
-	if !isRestoreConfigName(name) {
-		return renderEditorErrorPage(c, http.StatusBadRequest, fmt.Errorf("only config/bookmarks/apps/ports yml-yaml files or zip backups are supported"))
+	if err := refreshRequestLoginRuntime(c); err != nil {
+		return fail(http.StatusInternalServerError, fmt.Errorf("refresh restored login config failed: %w", err))
 	}
-	if err := validateRestorePayload(name, raw); err != nil {
-		return renderEditorErrorPage(c, http.StatusBadRequest, err)
+	if editorWantsJSON(c) {
+		return c.JSON(http.StatusOK, map[string]string{"notice": editorNoticeRestoreSuccess})
 	}
-	if err := writeRestoreFilesAtomically(map[string][]byte{name: raw}); err != nil {
-		return renderEditorErrorPage(c, http.StatusInternalServerError, fmt.Errorf("restore backup failed: %w", err))
-	}
-	refreshRequestLoginRuntime(c)
 	return c.Redirect(http.StatusFound, buildEditorNoticeRedirectURL(editorNoticeRestoreSuccess))
 }
 func restoreZip(raw []byte) error {
@@ -340,28 +440,38 @@ func restoreZip(raw []byte) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "backup zip contains too many files")
 	}
 	restored := map[string][]byte{}
+	backgroundName := ""
+	var backgroundData []byte
 	totalExpanded := int64(0)
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
-		name := strings.ToLower(strings.TrimPrefix(f.Name, "/"))
+		entryName := strings.ToLower(f.Name)
+		isBackground := isBackupBackgroundName(entryName)
+		name := strings.TrimPrefix(entryName, "/")
 		name = strings.TrimSuffix(name, ".yml")
 		name = strings.TrimSuffix(name, ".yaml")
-		if strings.Contains(name, "/") || strings.Contains(name, `\`) || !isRestoreConfigName(name) {
+		if !isBackground && (strings.Contains(name, "/") || strings.Contains(name, `\`) || !isRestoreConfigName(name)) {
 			continue
+		}
+		if isBackground && backgroundName != "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "backup zip contains duplicate backgrounds")
 		}
 		if _, exists := restored[name]; exists {
 			return echo.NewHTTPError(http.StatusBadRequest, "backup zip contains duplicate restorable files")
 		}
-		if f.UncompressedSize64 > restoreZipEntryMaxBytes {
+		entryLimit := int64(restoreZipEntryMaxBytes)
+		if isBackground {
+			entryLimit = restoreBackgroundMaxBytes
+		}
+		if f.UncompressedSize64 > uint64(entryLimit) {
 			return echo.NewHTTPError(http.StatusBadRequest, "backup zip contains an oversized data file")
 		}
 		remaining := int64(restoreUploadMaxBytes) - totalExpanded
 		if remaining <= 0 {
 			return echo.NewHTTPError(http.StatusBadRequest, "backup zip expands beyond allowed size")
 		}
-		entryLimit := int64(restoreZipEntryMaxBytes)
 		if remaining < entryLimit {
 			entryLimit = remaining
 		}
@@ -377,6 +487,10 @@ func restoreZip(raw []byte) error {
 			return echo.NewHTTPError(http.StatusBadRequest, "backup zip contains an oversized data file")
 		}
 		totalExpanded += int64(len(rawFile))
+		if isBackground {
+			backgroundName, backgroundData = entryName, rawFile
+			continue
+		}
 		if err := validateRestorePayload(name, rawFile); err != nil {
 			return err
 		}
@@ -385,7 +499,38 @@ func restoreZip(raw []byte) error {
 	if len(restored) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "backup does not contain any restorable data files")
 	}
-	return writeRestoreFilesAtomically(restored)
+	return background.WithUploadedBackgroundLock(func() error {
+		return data.WithConfigWriteLock(func() error {
+			if backgroundName == "" {
+				return writeRestoreFilesAtomicallyLocked(restored)
+			}
+			options, err := data.LoadAppConfigFromRaw(restored["config"])
+			if err != nil || !background.UsesUploadedBackground(options) {
+				return fmt.Errorf("backup background requires an uploaded-background config")
+			}
+			if _, err := background.PrepareUploadedBackgroundStage(filepath.Base(backgroundName), bytes.NewReader(backgroundData)); err != nil {
+				return fmt.Errorf("restore background failed: %w", err)
+			}
+			defer background.DiscardStagedUploadedBackgrounds()
+			activation, err := background.BeginStagedUploadedBackgroundActivation()
+			if err != nil {
+				return err
+			}
+			if err := writeRestoreFilesAtomicallyLocked(restored); err != nil {
+				return errors.Join(err, activation.Rollback())
+			}
+			return activation.Commit()
+		})
+	})
+}
+
+func isBackupBackgroundName(name string) bool {
+	switch name {
+	case backupBackgroundPrefix + ".jpg", backupBackgroundPrefix + ".jpeg", backupBackgroundPrefix + ".png", backupBackgroundPrefix + ".gif", backupBackgroundPrefix + ".webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func readRestoreZipEntry(r io.ReadCloser, limit int64) ([]byte, bool, error) {
@@ -432,10 +577,17 @@ type pendingRestoreFile struct {
 }
 
 func validateRestorePayload(name string, raw []byte) error {
+	if err := data.ValidateConfigFileSize(name, raw); err != nil {
+		return err
+	}
 	switch name {
 	case "config":
-		if _, err := data.LoadAppConfigFromRaw(raw); err != nil {
+		options, err := data.LoadAppConfigFromRaw(raw)
+		if err != nil {
 			return fmt.Errorf("parse config restore payload failed: %w", err)
+		}
+		if strings.TrimSpace(options.LoginUser) != "" || strings.TrimSpace(options.LoginPass) != "" {
+			return data.ValidateLoginCredentialPair(options.LoginUser, options.LoginPass, "restored config.yml")
 		}
 	case "bookmarks":
 		if _, err := data.LoadNormalBookmarksFromRaw(raw); err != nil {
@@ -456,12 +608,40 @@ func validateRestorePayload(name string, raw []byte) error {
 }
 
 func writeRestoreFilesAtomically(files map[string][]byte) error {
-	return data.WithConfigWriteLock(func() error {
-		return writeRestoreFilesAtomicallyLocked(files)
+	return background.WithUploadedBackgroundLock(func() error {
+		return data.WithConfigWriteLock(func() error {
+			return writeRestoreFilesAtomicallyLocked(files)
+		})
 	})
 }
 
 func writeRestoreFilesAtomicallyLocked(files map[string][]byte) error {
+	var configRaw []byte
+	if raw, ok := files["config"]; ok {
+		options, err := data.LoadAppConfigFromRaw(raw)
+		if err != nil {
+			return err
+		}
+		if background.UsesUploadedBackground(options) {
+			if err := background.CheckUploadedBackground(); err != nil {
+				return fmt.Errorf("backup requires a missing uploaded background; restore a ZIP containing the image or upload it first: %w", err)
+			}
+		}
+		current, _ := data.GetAllSettingsOptions()
+		fallbackUser, fallbackPass := current.LoginUser, current.LoginPass
+		if strings.TrimSpace(fallbackUser) == "" || strings.TrimSpace(fallbackPass) == "" {
+			active := auth.SnapshotLoginRuntimeConfig()
+			fallbackUser, fallbackPass = active.User, active.Pass
+		}
+		configRaw, err = data.EnsureLoginConfigInRawConfig(raw, fallbackUser, fallbackPass)
+		if err != nil {
+			return fmt.Errorf("restore login config failed: %w", err)
+		}
+		configRaw, err = data.EnsureLocalNetworkIdentityInRawConfig(configRaw, current.LocalNetworkID)
+		if err != nil {
+			return fmt.Errorf("initialize restored local network identity failed: %w", err)
+		}
+	}
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -478,7 +658,19 @@ func writeRestoreFilesAtomicallyLocked(files map[string][]byte) error {
 	pending := make([]pendingRestoreFile, 0, len(files))
 	for _, name := range names {
 		raw := files[name]
+		if name == "config" {
+			raw = configRaw
+		}
+		if err := data.ValidateConfigFileSize(name, raw); err != nil {
+			cleanupPendingRestoreTemps(pending)
+			return err
+		}
 		target, err := resolveRestoreConfigPath(name)
+		if err != nil {
+			cleanupPendingRestoreTemps(pending)
+			return err
+		}
+		mode, err := data.ConfigFileMode(target)
 		if err != nil {
 			cleanupPendingRestoreTemps(pending)
 			return err
@@ -495,7 +687,7 @@ func writeRestoreFilesAtomicallyLocked(files map[string][]byte) error {
 			cleanupPendingRestoreTemps(pending)
 			return err
 		}
-		if err := temp.Chmod(0644); err != nil {
+		if err := temp.Chmod(mode); err != nil {
 			_ = temp.Close()
 			_ = os.Remove(temp.Name())
 			cleanupPendingRestoreTemps(pending)
@@ -521,42 +713,13 @@ func writeRestoreFilesAtomicallyLocked(files map[string][]byte) error {
 
 	for index := range pending {
 		item := &pending[index]
-		if info, err := os.Stat(item.target); err == nil {
-			if info.IsDir() {
-				dirErr := fmt.Errorf("target path %s is a directory, cannot overwrite restore target", item.target)
-				rollbackErr := rollbackPendingRestoreFiles(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(dirErr, rollbackErr)
-				}
-				return dirErr
-			}
-			backup, err := os.CreateTemp(filepath.Dir(item.target), "."+filepath.Base(item.target)+".backup-*")
-			if err != nil {
-				rollbackErr := rollbackPendingRestoreFiles(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
-				}
-				return err
-			}
-			item.backup = backup.Name()
-			_ = backup.Close()
-			_ = os.Remove(item.backup)
-			if err := os.Rename(item.target, item.backup); err != nil {
-				rollbackErr := rollbackPendingRestoreFiles(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
-				}
-				return err
-			}
-		} else if !os.IsNotExist(err) {
-			rollbackErr := rollbackPendingRestoreFiles(pending, index-1)
-			if rollbackErr != nil {
-				return errors.Join(err, rollbackErr)
-			}
-			return err
+		var err error
+		item.backup, err = data.BackupConfigFile(item.target)
+		if err != nil {
+			return errors.Join(err, rollbackPendingRestoreFiles(pending, index-1))
 		}
-		if err := os.Rename(item.temp, item.target); err != nil {
-			rollbackErr := rollbackPendingRestoreFiles(pending, index)
+		if err := renameRestoreFile(item.temp, item.target); err != nil {
+			rollbackErr := rollbackPendingRestoreFiles(pending, index-1)
 			if rollbackErr != nil {
 				return errors.Join(err, rollbackErr)
 			}
@@ -609,8 +772,7 @@ func cleanupPendingRestoreTemps(items []pendingRestoreFile) {
 }
 
 func refreshRuntimeLoginConfig() error {
-	user, pass, err := data.GetLoginConfig()
-	return storeRuntimeLoginConfig(user, pass, err)
+	return data.WithConfigWriteLock(refreshRuntimeLoginConfigLocked)
 }
 
 func refreshRuntimeLoginConfigLocked() error {
@@ -631,15 +793,26 @@ func storeRuntimeLoginConfig(user string, pass string, err error) error {
 		updated.Pass = strings.TrimSpace(pass)
 		updated.PassIsGenerated = false
 	}
-	auth.StoreLoginRuntimeConfigFromFlags(updated)
+	auth.StoreLoginRuntimeConfig(auth.SnapshotLoginRuntimeConfigFromFlags(updated))
 	return nil
 }
 
-func refreshRequestLoginRuntime(c *echo.Context) {
+func refreshRequestLoginRuntime(c *echo.Context) error {
 	if c == nil {
-		return
+		return nil
 	}
-	auth.StoreLoginRuntimeConfigForRequest(c, auth.SnapshotLoginRuntimeConfigFromFlags(define.CurrentAppRuntimeFlags()))
+	return data.WithConfigWriteLock(func() error {
+		next := auth.SnapshotLoginRuntimeConfigForSessionName(auth.SessionNameForRequest(c))
+		if next.User == "" || next.Pass == "" {
+			return nil
+		}
+		previous := auth.SnapshotLoginRuntimeConfigForRequest(c)
+		auth.StoreLoginRuntimeConfigForRequest(c, next)
+		if previous.User != next.User || previous.Pass != next.Pass {
+			auth.InvalidateCurrentLoginSession(c)
+		}
+		return nil
+	})
 }
 
 func rollbackPendingRestoreFiles(items []pendingRestoreFile, appliedIndex int) error {
@@ -651,30 +824,20 @@ func rollbackPendingRestoreFiles(items []pendingRestoreFile, appliedIndex int) e
 		}
 		if index > appliedIndex {
 			if item.backup != "" {
-				if err := os.Rename(item.backup, item.target); err != nil && !os.IsNotExist(err) {
+				if err := os.Remove(item.backup); err != nil && !os.IsNotExist(err) {
 					rollbackErr = errors.Join(rollbackErr, err)
 				}
 			}
 			continue
 		}
-		if info, err := os.Stat(item.target); err == nil {
-			if info.IsDir() {
-				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("target path %s is a directory, cannot remove restored config during rollback", item.target))
-				continue
-			}
-			if err := os.Remove(item.target); err != nil && !os.IsNotExist(err) {
-				rollbackErr = errors.Join(rollbackErr, err)
-				continue
-			}
-		} else if !os.IsNotExist(err) {
-			rollbackErr = errors.Join(rollbackErr, err)
-			continue
-		}
 		if item.backup != "" {
-			if err := os.Rename(item.backup, item.target); err != nil && !os.IsNotExist(err) {
+			if err := renameRestoreFile(item.backup, item.target); err != nil {
 				rollbackErr = errors.Join(rollbackErr, err)
 			}
+		} else if err := os.Remove(item.target); err != nil && !os.IsNotExist(err) {
+			rollbackErr = errors.Join(rollbackErr, err)
 		}
+		data.InvalidateConfigCache(item.name)
 	}
 	return rollbackErr
 }
@@ -812,17 +975,11 @@ func classifyLinkCheckCandidate(rawURL string) linkCheckCandidate {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return linkCheckCandidate{Skip: true}
 	}
-	host := strings.ToLower(u.Hostname())
-	if host == "localhost" || host == "" {
-		if host == "" {
-			return linkCheckCandidate{InvalidReason: "missing URL host"}
-		}
-		return linkCheckCandidate{Skip: true}
+	if u.Hostname() == "" {
+		return linkCheckCandidate{InvalidReason: "missing URL host"}
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return linkCheckCandidate{Skip: true}
-		}
+	if err := validateLinkCheckURL(u); err != nil {
+		return linkCheckCandidate{Skip: true}
 	}
 	return linkCheckCandidate{}
 }
@@ -832,7 +989,8 @@ type linkCheckRunner func(context.Context, *http.Client, linkCheckItem) linkChec
 func runLinkChecks(ctx context.Context, items []linkCheckItem) []linkCheckResult {
 	results := make([]linkCheckResult, 0)
 	resultsMu := sync.Mutex{}
-	client := &http.Client{Timeout: linkCheckRequestTimeout}
+	client := newLinkCheckClient()
+	defer client.CloseIdleConnections()
 	return runLinkChecksWithChecker(ctx, client, items, linkCheckWorkerCount, &results, &resultsMu, checkOneLink)
 }
 
@@ -988,6 +1146,9 @@ func checkOneLinkOnce(ctx context.Context, client *http.Client, item linkCheckIt
 }
 
 func classifyLinkRequestError(err error) (string, string) {
+	if errors.Is(err, errLinkCheckDestinationNotAllowed) {
+		return "restricted", errLinkCheckDestinationNotAllowed.Error()
+	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		if dnsErr.IsNotFound {
@@ -1036,14 +1197,13 @@ func render(c *echo.Context) error {
 	}
 	statuspage.BindOptions(c, options)
 	options, renderWarnings := statuspage.PrepareSettingsOptionsForRender(options)
-	dataCategories, dataBookmarks, err := data.GetBookmarksForEditor()
+	snapshot, err := data.GetEditorSnapshot()
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	showEditorPortPicker := !auth.IsLoginDisabled(c)
 	portsJSON := "[]"
 	localLANHost := ""
-	if showEditorPortPicker {
+	if !auth.IsLoginDisabled(c) {
 		portsConfig, err := data.LoadPortBindings()
 		if err != nil {
 			return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
@@ -1053,7 +1213,11 @@ func render(c *echo.Context) error {
 			return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 		}
 		if portsJSON != "[]" {
-			localLANHost = portscollector.LocalLANHost()
+			localLANHost = editorPortHost(options.LocalNetworkURL, c.Request())
+			if localLANHost == "" {
+				portsJSON = "[]"
+				renderWarnings = append(renderWarnings, i18n.T(options.Locale, "editor_port_host_missing"))
+			}
 		}
 	}
 	m := pool.GetTemplateMap()
@@ -1062,11 +1226,12 @@ func render(c *echo.Context) error {
 	m["SettingPages"] = define.SettingPages
 	m["DebugMode"] = currentEditorRuntime().DebugMode
 	m["DebugAssetVersion"] = getDebugAssetVersion()
-	m["DataCategories"] = template.HTML(dataCategories)
-	m["DataBookmarks"] = template.HTML(dataBookmarks)
+	m["DataCategories"] = template.HTML(snapshot.Categories)
+	m["DataBookmarks"] = template.HTML(snapshot.Bookmarks)
+	m["DataRevision"] = snapshot.Revision
 	m["DataPorts"] = template.HTML(portsJSON)
 	m["LocalLANHost"] = localLANHost
-	m["ShowEditorPortPicker"] = showEditorPortPicker
+	m["ShowEditorPortPicker"] = localLANHost != ""
 	m["OptionTitle"] = options.Title
 	m["OptionSiteIcon"] = options.SiteIcon
 	m["Locale"] = options.Locale
@@ -1080,6 +1245,35 @@ func render(c *echo.Context) error {
 	m["OperationNotice"] = resolveEditorOperationNotice(options.Locale, c.QueryParam(editorNoticeQueryKey))
 	m["RenderWarnings"] = renderWarnings
 	return c.Render(http.StatusOK, "editor.html", m)
+}
+
+func editorPortHost(origin string, request *http.Request) string {
+	if origin == "" {
+		if request == nil {
+			return ""
+		}
+		authority := netutil.RequestForwardedHost(request)
+		if authority == "" {
+			authority = request.Host
+		}
+		if !fn.HostLooksLocalNetwork(authority) {
+			return ""
+		}
+		origin = "http://" + authority
+	}
+	origin, err := data.NormalizeLocalNetworkURL(origin)
+	if err != nil || origin == "" {
+		return ""
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return ""
+	}
+	host := u.Hostname()
+	if strings.Contains(host, ":") {
+		return "[" + strings.ReplaceAll(host, "%", "%25") + "]"
+	}
+	return host
 }
 
 func marshalEditorPorts(items []model.PortBinding) (string, error) {

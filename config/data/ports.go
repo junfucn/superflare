@@ -1,8 +1,9 @@
 package data
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
-	"log"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -13,31 +14,29 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 )
 
+var ErrPortRevisionConflict = errors.New("port settings have changed since they were loaded")
+
 func LoadPortBindings() (model.Ports, error) {
-	var result model.Ports
 	filePath, err := portsConfigPath()
 	if err != nil {
-		return result, err
+		return model.Ports{}, err
 	}
+	raw, err := readFileCached(filePath, func() ([]byte, error) { return readPortBindingsFile(filePath) })
+	if err != nil {
+		return model.Ports{}, err
+	}
+	return LoadPortBindingsFromRaw(raw)
+}
+
+func readPortBindingsFile(filePath string) ([]byte, error) {
 	exists, err := pathExists(filePath)
 	if err != nil {
-		return result, fmt.Errorf("stat ports config failed: %w", err)
+		return nil, fmt.Errorf("stat ports config failed: %w", err)
 	}
 	if !exists {
-		return result, fmt.Errorf("ports config is missing")
+		return nil, fmt.Errorf("ports config is missing")
 	}
-	configFile, err := readFileCached(filePath, func() ([]byte, error) { return readFile(filePath) })
-	if err != nil {
-		return result, err
-	}
-	if err := yaml.Unmarshal(configFile, &result); err != nil {
-		return result, err
-	}
-	if err := validateLoadedPortBindings(result.Items); err != nil {
-		return result, err
-	}
-	result.Items = normalizePortBindings(result.Items)
-	return result, nil
+	return readFile(filePath)
 }
 
 func LoadPortBindingsFromRaw(raw []byte) (model.Ports, error) {
@@ -52,29 +51,80 @@ func LoadPortBindingsFromRaw(raw []byte) (model.Ports, error) {
 	return result, nil
 }
 
-func SavePortBindings(data model.Ports) error {
+func SavePortBindings(ports model.Ports) error {
 	return withConfigWriteLock(func() error {
-		data.Items = normalizePortBindings(data.Items)
-		out, err := yaml.Marshal(data)
-		if err != nil {
-			log.Println("marshal ports failed")
-			return fmt.Errorf("marshal ports failed: %w", err)
-		}
 		filePath, err := portsConfigPath()
 		if err != nil {
 			return err
 		}
-		if err := saveFileLocked(filePath, out); err != nil {
-			log.Println("save ports failed")
-			return fmt.Errorf("save ports failed: %w", err)
-		}
-		invalidateFileCachePath(filePath)
-		return nil
+		_, err = savePortBindingsLocked(filePath, ports.Items)
+		return err
 	})
+}
+
+func savePortBindingsLocked(filePath string, items []model.PortBinding) (string, error) {
+	out, err := yaml.Marshal(model.Ports{Items: normalizePortBindings(items)})
+	if err != nil {
+		return "", fmt.Errorf("marshal ports failed: %w", err)
+	}
+	if err := saveFileLocked(filePath, out); err != nil {
+		return "", fmt.Errorf("save ports failed: %w", err)
+	}
+	invalidateFileCachePath(filePath)
+	return portBindingsRevision(out), nil
+}
+
+func portBindingsRevision(raw []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
 }
 
 func UpdatePortRemarks(items []model.PortBinding) error {
 	return SavePortBindings(model.Ports{Items: items})
+}
+
+func UpdatePortRemarksWithRevision(items []model.PortBinding, expected string, includeHidden bool) (revision string, err error) {
+	if expected == "" {
+		return "", ErrPortRevisionConflict
+	}
+	err = withConfigWriteLock(func() error {
+		filePath, err := portsConfigPath()
+		if err != nil {
+			return err
+		}
+		// Check the file on disk, including changes made outside this process.
+		raw, err := readPortBindingsFile(filePath)
+		if err != nil {
+			return fmt.Errorf("ports config error: %w", err)
+		}
+		if expected != portBindingsRevision(raw) {
+			return ErrPortRevisionConflict
+		}
+		if !includeHidden {
+			current, err := LoadPortBindingsFromRaw(raw)
+			if err != nil {
+				return fmt.Errorf("ports config error: %w", err)
+			}
+			bindings := portBindingMap(model.Ports{Items: items})
+			for _, item := range current.Items {
+				if _, present := bindings[portBindingKey(item.Protocol, item.Port)]; item.Hidden && !present {
+					items = append(items, item)
+				}
+			}
+		}
+		revision, err = savePortBindingsLocked(filePath, items)
+		return err
+	})
+	return revision, err
+}
+
+func UpdatePortCollectionEnabled(enabled bool) error {
+	if err := EnsureAppConfigExists(); err != nil {
+		return err
+	}
+	return updateLockedAppConfig("config", func(options model.Application) (model.Application, error) {
+		options.DisablePortCollection = !enabled
+		return options, nil
+	})
 }
 
 func GetPortBindingMapWithError() (map[string]model.PortBinding, error) {
@@ -82,6 +132,26 @@ func GetPortBindingMapWithError() (map[string]model.PortBinding, error) {
 	if err != nil {
 		return map[string]model.PortBinding{}, err
 	}
+	return portBindingMap(ports), nil
+}
+
+func GetPortBindingMapWithRevision() (map[string]model.PortBinding, string, error) {
+	filePath, err := portsConfigPath()
+	if err != nil {
+		return nil, "", err
+	}
+	raw, err := readPortBindingsFile(filePath)
+	if err != nil {
+		return nil, "", err
+	}
+	ports, err := LoadPortBindingsFromRaw(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	return portBindingMap(ports), portBindingsRevision(raw), nil
+}
+
+func portBindingMap(ports model.Ports) map[string]model.PortBinding {
 	bindings := make(map[string]model.PortBinding, len(ports.Items))
 	for _, item := range ports.Items {
 		if item.Port <= 0 {
@@ -91,7 +161,7 @@ func GetPortBindingMapWithError() (map[string]model.PortBinding, error) {
 		item.Remark = strings.TrimSpace(item.Remark)
 		bindings[portBindingKey(item.Protocol, item.Port)] = item
 	}
-	return bindings, nil
+	return bindings
 }
 
 func GetPortRemarkMapWithError() (map[string]string, error) {

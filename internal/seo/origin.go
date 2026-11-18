@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/config/validation"
+	"github.com/junfuchang/superflare/internal/netutil"
 )
 
 const (
-	defaultScheme = "http"
-	schemeHTTP    = "http"
-	schemeHTTPS   = "https"
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
 )
 
 // ResolveOrigin returns the absolute site origin ("https://example.com") used
@@ -19,8 +20,8 @@ const (
 //
 // A configured SiteURL always wins: it is the only way to produce stable URLs
 // behind a reverse proxy that rewrites Host/proto. When it is empty the origin
-// is derived from the incoming request, honouring X-Forwarded-Proto/Host so
-// that deployments behind a proxy still emit https links.
+// is derived from the incoming request, honouring X-Forwarded-Proto/Host only
+// from trusted proxies so deployments behind a proxy still emit https links.
 func ResolveOrigin(options model.Application, r *http.Request) string {
 	if site := normalizeSiteURL(options.SiteURL); site != "" {
 		return site
@@ -48,7 +49,7 @@ func normalizeSiteURL(raw string) string {
 		return ""
 	}
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" {
+	if err != nil || parsed.Host == "" || !validation.IsValidHTTPURL(raw) {
 		return ""
 	}
 	scheme := strings.ToLower(parsed.Scheme)
@@ -56,7 +57,7 @@ func normalizeSiteURL(raw string) string {
 		return ""
 	}
 	base := scheme + "://" + parsed.Host
-	path := strings.TrimRight(parsed.Path, "/")
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
 	if path != "" && path != "/" {
 		base += path
 	}
@@ -64,26 +65,14 @@ func normalizeSiteURL(raw string) string {
 }
 
 func requestScheme(r *http.Request) string {
-	if r == nil {
-		return defaultScheme
-	}
-	if forwarded := headerFirstValue(r.Header.Get("X-Forwarded-Proto")); forwarded == schemeHTTP || forwarded == schemeHTTPS {
-		return forwarded
-	}
-	if forwarded := forwardedElement(r.Header.Get("Forwarded"), "proto"); forwarded == schemeHTTP || forwarded == schemeHTTPS {
-		return forwarded
-	}
-	if r.TLS != nil {
-		return schemeHTTPS
-	}
-	return defaultScheme
+	return netutil.RequestScheme(r)
 }
 
 func requestHost(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if forwarded := headerFirstValue(r.Header.Get("X-Forwarded-Host")); isSafeHost(forwarded) {
+	if forwarded := headerFirstValue(netutil.RequestForwardedHost(r)); isSafeHost(forwarded) {
 		return forwarded
 	}
 	host := strings.TrimSpace(r.Host)
@@ -104,18 +93,6 @@ func headerFirstValue(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
-func forwardedElement(raw string, key string) string {
-	for _, part := range strings.Split(raw, ";") {
-		part = strings.TrimSpace(part)
-		name, value, ok := strings.Cut(part, "=")
-		if !ok || !strings.EqualFold(strings.TrimSpace(name), key) {
-			continue
-		}
-		return strings.ToLower(strings.Trim(strings.TrimSpace(value), `"`))
-	}
-	return ""
-}
-
 // isSafeHost accepts host[:port] shaped values only. This keeps untrusted
 // header content out of canonical URLs and the XML sitemap.
 func isSafeHost(host string) bool {
@@ -133,7 +110,8 @@ func isSafeHost(host string) bool {
 			return false
 		}
 	}
-	return true
+	parsed, err := url.Parse("http://" + host)
+	return err == nil && parsed.Host == host && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == "" && validation.IsValidHTTPURL("http://"+host)
 }
 
 // AbsoluteURL resolves a possibly site-relative path against the origin.

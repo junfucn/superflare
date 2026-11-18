@@ -1,9 +1,11 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>{{.OptionTitle}} - Settings</title><link rel="icon" href="{{ SiteIconURL .OptionSiteIcon }}"><link rel="shortcut icon" href="{{ SiteIconURL .OptionSiteIcon }}">{{ if eq .OptionSiteIcon "" }}
+<!doctype html><html lang="{{.Locale}}"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>{{.OptionTitle}} - {{ T .Locale "app_settings" }}</title><link rel="icon" href="{{ SiteIconURL .OptionSiteIcon }}"><link rel="shortcut icon" href="{{ SiteIconURL .OptionSiteIcon }}">{{ if eq .OptionSiteIcon "" }}
 <link rel="apple-touch-icon" href="{{ AppleTouchIconURL }}"><link rel="icon" type="image/png" sizes="192x192" href="{{ AndroidChrome192URL }}"><link rel="icon" type="image/png" sizes="512x512" href="{{ AndroidChrome512URL }}">{{ end }}
 {{ if .DebugMode }}
 <link rel="stylesheet" href="/assets/css/base.css"><link rel="stylesheet" href="/assets/css/settings/sidebar.css"><link rel="stylesheet" href="/assets/css/settings/layout.css"><link rel="stylesheet" href="/assets/css/settings/theme.css">{{ else }}<style>{{.PageInlineStyle}}</style>{{ end }}
 {{ if eq .PageName "Ports" }}
-<link rel="stylesheet" href="/assets/table/grid.css{{.DebugAssetVersion}}"><script src="/assets/table/runtime.js{{.DebugAssetVersion}}"></script><script src="/assets/table/grid.js{{.DebugAssetVersion}}"></script><script src="/assets/table/grid.zh-CN.js{{.DebugAssetVersion}}"></script>{{ end }}</head><body style="{{.PageAppearance}}"><div class="pageview" id="page-settings"><div class="container">{{ template "settings-header.html" . }}
+<link rel="stylesheet" href="/assets/table/grid.css{{.DebugAssetVersion}}"><script src="/assets/table/runtime.js{{.DebugAssetVersion}}"></script><script src="/assets/table/grid.js{{.DebugAssetVersion}}"></script><script src="/assets/table/grid.zh-CN.js{{.DebugAssetVersion}}"></script>{{ end }}
+{{.LocalNetworkStyle}}</head><body style="{{.PageAppearance}}"><div class="pageview" id="page-settings"><div class="container">{{ template "settings-header.html" . }}
+{{ if .SettingsSaved }}<div class="settings-save-notice" role="status">{{ T .Locale "settings_saved" }}</div>{{ end }}
 {{ if .RenderWarnings }}<div class="settings-render-warnings">{{ range .RenderWarnings }}<div class="settings-render-warning">{{ . }}</div>{{ end }}</div>{{ end }}<div class="main-container clearfix">{{ if .ShowSettingsSidebar }}
 {{ template "settings-sidebar.html" . }}
 {{ end }}
@@ -27,7 +29,7 @@
 {{ end }}
 {{ if eq .PageName "Scripts" }}
 {{ template "settings-scripts.html" . }}
-{{ end }}</div><div class="footer-container">{{.RenderedFooter}}</div></div></div><style>.settings-color-input-row{display:flex;align-items:center;gap:8px}.settings-color-trigger{width:38px;height:38px;padding:0;border:1px solid color-mix(in srgb,var(--color-accent) 76%,rgba(255,255,255,.18));border-radius:6px;background:0 0;flex:none;cursor:pointer;vertical-align:middle;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-accent) 22%,transparent)}.settings-color-trigger::before{content:"";display:block;width:100%;height:100%;border-radius:5px;background:var(--settings-color-preview,transparent)}.settings-color-trigger.is-transparent::before{background:linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),var(--settings-color-preview,transparent);background-size:10px 10px,10px 10px,auto;background-position:0 0,5px 5px,50%}.settings-color-trigger.is-active{border-color:var(--color-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 24%,transparent)}.settings-color-panel{position:fixed;z-index:3000;display:none;width:292px;padding:12px;border:1px solid rgba(255,253,234,.18);border-radius:8px;background:rgba(18,18,18,.98);box-shadow:0 18px 36px rgba(0,0,0,.42)}.settings-color-panel.is-open{display:block}.settings-color-panel-body{display:grid;gap:12px}.settings-color-panel-preview{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,4%)}.settings-color-panel-preview-swatch{width:34px;height:34px;flex:none;border-radius:6px;border:1px solid color-mix(in srgb,var(--color-accent) 70%,rgba(255,255,255,.18));background:var(--settings-color-panel-preview-color,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-accent) 22%,transparent)}.settings-color-panel-preview-swatch.is-transparent{background:linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),var(--settings-color-panel-preview-color,transparent);background-size:10px 10px,10px 10px,auto;background-position:0 0,5px 5px,50%}.settings-color-panel-preview-text{min-width:0;font-size:12px;line-height:1.35;color:color-mix(in srgb,var(--color-primary) 84%,transparent);word-break:break-all}.settings-color-wheel-box{position:relative;width:176px;height:176px;margin:0 auto}.settings-color-wheel{display:block;width:176px;height:176px;border:none;border-radius:50%;background:rgba(255,255,255,4%);cursor:crosshair;touch-action:none;box-shadow:inset 0 0 0 1px rgba(255,253,234,.18)}.settings-color-wheel-marker{position:absolute;width:12px;height:12px;margin-left:-6px;margin-top:-6px;border-radius:50%;border:2px solid rgba(255,255,255,.95);box-shadow:0 0 0 1px rgba(0,0,0,.5),0 0 0 2px rgba(0,0,0,.18);pointer-events:none}.settings-color-slider{display:grid;gap:6px}.settings-color-slider-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:color-mix(in srgb,var(--color-primary) 84%,transparent)}.settings-color-slider input[type=range]{width:100%;margin:0;accent-color:var(--color-accent)}.settings-color-panel-actions{display:flex;gap:8px}.settings-color-button{flex:1;min-height:36px;padding:0 12px;border:1px solid color-mix(in srgb,var(--color-primary) 16%,transparent);border-radius:6px;background:rgba(12,12,12,.92);color:var(--color-primary);cursor:pointer;transition:border-color .18s ease,background-color .18s ease,opacity .18s ease}.settings-color-button:hover{border-color:color-mix(in srgb,var(--color-accent) 60%,white 10%);background:rgba(24,24,24,.88)}.settings-color-button:focus{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 24%,transparent)}.settings-color-input-row .option-input{flex:auto;min-width:0}.settings-render-warnings{display:grid;gap:10px;margin:0 0 18px}.settings-render-warning{padding:12px 14px;border:1px solid color-mix(in srgb,var(--color-accent) 36%,transparent);border-radius:6px;background:color-mix(in srgb,var(--color-background) 78%,var(--color-accent) 22%);color:var(--color-primary);line-height:1.5;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-primary) 8%,transparent)}</style><script>(function () {
+{{ end }}</div><div class="footer-container">{{.RenderedFooter}}</div></div></div><style>.settings-color-input-row{display:flex;align-items:center;gap:8px}.settings-color-trigger{width:38px;height:38px;padding:0;border:1px solid color-mix(in srgb,var(--color-accent) 76%,rgba(255,255,255,.18));border-radius:6px;background:0 0;flex:none;cursor:pointer;vertical-align:middle;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-accent) 22%,transparent)}.settings-color-trigger::before{content:"";display:block;width:100%;height:100%;border-radius:5px;background:var(--settings-color-preview,transparent)}.settings-color-trigger.is-transparent::before{background:linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),var(--settings-color-preview,transparent);background-size:10px 10px,10px 10px,auto;background-position:0 0,5px 5px,50%}.settings-color-trigger.is-active{border-color:var(--color-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 24%,transparent)}.settings-color-trigger:focus-visible,.settings-color-button:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}.settings-color-panel{position:fixed;z-index:3000;display:none;box-sizing:border-box;width:min(292px,calc(100% - 16px));max-height:calc(100% - 16px);overflow-y:auto;overscroll-behavior:contain;padding:12px;border:1px solid color-mix(in srgb,var(--color-primary) 24%,transparent);border-radius:8px;background:var(--color-background);box-shadow:0 18px 36px rgba(0,0,0,.42)}.settings-color-panel.is-open{display:block}.settings-color-panel-body{display:grid;gap:12px}.settings-color-panel-preview{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;background:color-mix(in srgb,var(--color-primary) 6%,var(--color-background))}.settings-color-panel-preview-swatch{width:34px;height:34px;flex:none;border-radius:6px;border:1px solid color-mix(in srgb,var(--color-accent) 70%,rgba(255,255,255,.18));background:var(--settings-color-panel-preview-color,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-accent) 22%,transparent)}.settings-color-panel-preview-swatch.is-transparent{background:linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),linear-gradient(45deg,rgba(255,255,255,.18) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.18) 75%,rgba(255,255,255,.18)),var(--settings-color-panel-preview-color,transparent);background-size:10px 10px,10px 10px,auto;background-position:0 0,5px 5px,50%}.settings-color-panel-preview-text{min-width:0;font-size:12px;line-height:1.35;color:color-mix(in srgb,var(--color-primary) 84%,transparent);word-break:break-all}.settings-color-wheel-box{position:relative;width:176px;height:176px;margin:0 auto}.settings-color-wheel{display:block;width:176px;height:176px;border:none;border-radius:50%;background:rgba(255,255,255,4%);cursor:crosshair;touch-action:none;box-shadow:inset 0 0 0 1px rgba(255,253,234,.18)}.settings-color-wheel-marker{position:absolute;width:12px;height:12px;margin-left:-6px;margin-top:-6px;border-radius:50%;border:2px solid rgba(255,255,255,.95);box-shadow:0 0 0 1px rgba(0,0,0,.5),0 0 0 2px rgba(0,0,0,.18);pointer-events:none}.settings-color-slider{display:grid;gap:6px}.settings-color-slider-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:color-mix(in srgb,var(--color-primary) 84%,transparent)}.settings-color-slider input[type=range]{width:100%;margin:0;accent-color:var(--color-accent)}.settings-color-panel-actions{display:flex;gap:8px}.settings-color-button{flex:1;min-height:36px;padding:0 12px;border:1px solid color-mix(in srgb,var(--color-primary) 16%,transparent);border-radius:6px;background:var(--color-background);color:var(--color-primary);cursor:pointer;transition:border-color .18s ease,background-color .18s ease,opacity .18s ease}.settings-color-button:hover{border-color:var(--color-accent);background:color-mix(in srgb,var(--color-primary) 8%,var(--color-background))}.settings-color-input-row .option-input{flex:auto;min-width:0}.settings-render-warnings{display:grid;gap:10px;margin:0 0 18px}.settings-render-warning,.settings-save-notice{padding:12px 14px;border:1px solid color-mix(in srgb,var(--color-accent) 36%,transparent);border-radius:6px;background:color-mix(in srgb,var(--color-background) 78%,var(--color-accent) 22%);color:var(--color-primary);line-height:1.5;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-primary) 8%,transparent)}.settings-save-notice{margin:0 0 18px;border-color:color-mix(in srgb,var(--color-primary) 26%,transparent);background:color-mix(in srgb,var(--color-background) 93%,var(--color-primary))}</style><script>(function () {
 var doc = document;
 var I18N = {
 open: "{{ T .Locale "color_picker_open" }}",
@@ -291,6 +293,7 @@ brightnessSlider.type = "range";
 brightnessSlider.min = "0";
 brightnessSlider.max = "100";
 brightnessSlider.step = "1";
+brightnessSlider.setAttribute("aria-label", I18N.brightness);
 brightness.appendChild(brightnessSlider);
 var alpha = doc.createElement("div");
 alpha.className = "settings-color-slider";
@@ -303,6 +306,7 @@ alphaSlider.type = "range";
 alphaSlider.min = "0";
 alphaSlider.max = "100";
 alphaSlider.step = "1";
+alphaSlider.setAttribute("aria-label", I18N.alpha);
 alpha.appendChild(alphaSlider);
 var actions = doc.createElement("div");
 actions.className = "settings-color-panel-actions";
@@ -398,8 +402,8 @@ syncTrigger(activeInput);
 function setPanelPosition() {
 if (!activeTrigger || !panel) { return; }
 var rect = activeTrigger.getBoundingClientRect();
-var viewportWidth = Math.max(doc.documentElement.clientWidth || 0, window.innerWidth || 0);
-var viewportHeight = Math.max(doc.documentElement.clientHeight || 0, window.innerHeight || 0);
+var viewportWidth = doc.documentElement.clientWidth;
+var viewportHeight = doc.documentElement.clientHeight;
 var panelWidth = panel.offsetWidth || 292;
 var panelHeight = panel.offsetHeight || 316;
 var left = rect.left;
@@ -419,22 +423,28 @@ top = 8;
 panel.style.left = left + "px";
 panel.style.top = top + "px";
 }
-function hidePanel() {
+function hidePanel(restoreFocus) {
 if (!panel) { return; }
 panel.classList.remove("is-open");
 panel.style.visibility = "";
+var trigger = activeTrigger;
 if (activeTrigger) {
 activeTrigger.classList.remove("is-active");
+activeTrigger.setAttribute("aria-expanded", "false");
 }
 activeInput = null;
 activeTrigger = null;
 currentState = null;
 dragMode = "";
+if (restoreFocus && trigger && trigger.isConnected) {
+trigger.focus({ preventScroll: true });
+}
 }
 function showPanel(input, trigger) {
 ensurePanel();
 if (activeTrigger && activeTrigger !== trigger) {
 activeTrigger.classList.remove("is-active");
+activeTrigger.setAttribute("aria-expanded", "false");
 }
 activeInput = input;
 activeTrigger = trigger;
@@ -456,7 +466,10 @@ panel.classList.add("is-open");
 panel.style.visibility = "hidden";
 setPanelPosition();
 panel.style.visibility = "";
+panel.scrollTop = 0;
 trigger.classList.add("is-active");
+trigger.setAttribute("aria-expanded", "true");
+brightnessSlider.focus();
 }
 wheelCanvas.addEventListener("mousedown", function (event) {
 if (!currentState) { return; }
@@ -492,25 +505,30 @@ dragMode = "";
 doc.addEventListener("touchend", function () {
 dragMode = "";
 });
+doc.addEventListener("touchcancel", function () {
+dragMode = "";
+});
 brightnessSlider.addEventListener("input", setValueFromSlider);
 alphaSlider.addEventListener("input", setAlphaFromSlider);
 confirmButton.addEventListener("click", function () {
 commitColor();
-hidePanel();
+hidePanel(true);
 });
-cancelButton.addEventListener("click", hidePanel);
-doc.addEventListener("mousedown", function (event) {
-if (!panel || !panel.classList.contains("is-open")) { return; }
-if (panel.contains(event.target) || (activeTrigger && activeTrigger.contains(event.target))) { return; }
-hidePanel();
+cancelButton.addEventListener("click", function () {
+hidePanel(true);
 });
-doc.addEventListener("keydown", function (event) {
-if (!panel || !panel.classList.contains("is-open")) { return; }
-if (event.key === "Escape") {
-hidePanel();
-} else if (event.key === "Enter") {
-commitColor();
-hidePanel();
+function dismissOutside(event) {
+if (activeTrigger && !panel.contains(event.target) && !activeTrigger.contains(event.target)) {
+hidePanel(false);
+}
+}
+doc.addEventListener("pointerdown", dismissOutside);
+doc.addEventListener("focusin", dismissOutside);
+panel.addEventListener("keydown", function (event) {
+if (event.key === "Escape" && !event.isComposing) {
+event.preventDefault();
+event.stopPropagation();
+hidePanel(true);
 }
 });
 window.addEventListener("resize", function () {
@@ -524,10 +542,8 @@ setPanelPosition();
 }
 }, true);
 wheelCtx = wheelCanvas.getContext("2d");
-panel.__settingsColorRender = renderWheel;
 panel.__settingsColorShow = showPanel;
 panel.__settingsColorHide = hidePanel;
-panel.__settingsColorRenderPreview = renderPreview;
 return panel;
 }
 function mountColorPickers() {
@@ -542,12 +558,19 @@ var trigger = doc.createElement("button");
 trigger.type = "button";
 trigger.className = "settings-color-trigger";
 trigger.setAttribute("aria-label", I18N.open);
+trigger.setAttribute("aria-haspopup", "dialog");
+trigger.setAttribute("aria-expanded", "false");
 trigger.title = I18N.open;
 row.appendChild(trigger);
 input.__settingsColorTrigger = trigger;
 syncTrigger(input);
 trigger.addEventListener("click", function () {
-ensurePanel().__settingsColorShow(input, trigger);
+var picker = ensurePanel();
+if (activeTrigger === trigger) {
+picker.__settingsColorHide(true);
+} else {
+picker.__settingsColorShow(input, trigger);
+}
 });
 input.addEventListener("input", function () {
 syncTrigger(input);
@@ -566,4 +589,5 @@ doc.addEventListener("DOMContentLoaded", mountColorPickers, { once: true });
 mountColorPickers();
 }
 }());
-</script><script>document.addEventListener('keydown',function(e){if(e.key==='Escape')history.back();});</script></body></html>
+</script>{{ if .LocalNetworkScript }}<script>{{.LocalNetworkScript}}</script>{{ end }}
+<script>document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!e.defaultPrevented&&!e.isComposing&&!e.target.closest('input,textarea,select,[contenteditable="true"],.handsontable'))history.back();});</script></body></html>

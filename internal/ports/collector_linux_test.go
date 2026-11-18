@@ -72,6 +72,41 @@ func TestGetProcRootCanUseHostProcOverride(t *testing.T) {
 	}
 }
 
+func TestHostProcCollectionUsesPID1AndNeverFallsBackToContainerCommands(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(envPortProcRoot, dir)
+	originalRunner := runPortCommand
+	t.Cleanup(func() { runPortCommand = originalRunner })
+	runPortCommand = func(name string, args ...string) ([]byte, error) {
+		t.Fatalf("host collection ran container command %s", name)
+		return nil, nil
+	}
+	for _, fixture := range []struct{ path, port string }{
+		{filepath.Join(dir, "self", "net"), "0E34"},
+		{filepath.Join(dir, "1", "net"), "1F90"},
+	} {
+		if err := os.MkdirAll(fixture.path, 0755); err != nil {
+			t.Fatal(err)
+		}
+		raw := "header\n0: 00000000:" + fixture.port + " 00000000:0000 0A 0:0 0:0 0 0 0 12345\n"
+		if err := os.WriteFile(filepath.Join(fixture.path, "tcp"), []byte(raw), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("self/net", filepath.Join(dir, "net")); err != nil {
+		t.Fatal(err)
+	}
+	got := collectRuntimePortsResult()
+	if got.Err != nil || len(got.Ports) != 1 || got.Ports[0].Port != 8080 ||
+		len(got.Warnings) != 1 || got.Warnings[0].MissingOwners != 1 {
+		t.Fatalf("expected host port and incomplete owner warning, got %#v", got)
+	}
+	t.Setenv(envPortProcRoot, filepath.Join(dir, "missing"))
+	if got := collectRuntimePortsResult(); got.Err == nil {
+		t.Fatal("an unavailable host proc mount must report an error")
+	}
+}
+
 func TestParseSSOutputExtractsPIDAndName(t *testing.T) {
 	raw := `tcp LISTEN 0 4096 0.0.0.0:5668 0.0.0.0:* users:(("superflare",pid=321,fd=9))
 udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:* users:(("avahi-daemon",pid=112,fd=12))`
@@ -186,7 +221,6 @@ func TestCollectRuntimePortsResultFallsBackWhenProcScanFails(t *testing.T) {
 	defer func() { runPortCommand = originalRunner }()
 
 	dir := t.TempDir()
-	t.Setenv(envPortProcRoot, dir)
 	netDir := filepath.Join(dir, "net")
 	if err := os.MkdirAll(netDir, 0755); err != nil {
 		t.Fatalf("mkdir net dir: %v", err)
@@ -207,7 +241,7 @@ func TestCollectRuntimePortsResultFallsBackWhenProcScanFails(t *testing.T) {
 		}
 	}
 
-	got := collectRuntimePortsResult()
+	got := collectRuntimePortsFromProc(dir, false)
 	if got.Err != nil {
 		t.Fatalf("expected command fallback success, got error %v", got.Err)
 	}
@@ -224,7 +258,6 @@ func TestCollectRuntimePortsResultReturnsErrorWhenProcScanAndCommandsFail(t *tes
 	defer func() { runPortCommand = originalRunner }()
 
 	dir := t.TempDir()
-	t.Setenv(envPortProcRoot, dir)
 	netDir := filepath.Join(dir, "net")
 	if err := os.MkdirAll(netDir, 0755); err != nil {
 		t.Fatalf("mkdir net dir: %v", err)
@@ -238,7 +271,7 @@ func TestCollectRuntimePortsResultReturnsErrorWhenProcScanAndCommandsFail(t *tes
 		return nil, errors.New("command failed")
 	}
 
-	got := collectRuntimePortsResult()
+	got := collectRuntimePortsFromProc(dir, false)
 	if got.Err == nil {
 		t.Fatal("expected proc scan and command failure to surface")
 	}
@@ -255,7 +288,6 @@ func TestCollectRuntimePortsResultReturnsErrorWhenOwnerLookupMissingAndFallbackF
 	defer func() { runPortCommand = originalRunner }()
 
 	dir := t.TempDir()
-	t.Setenv(envPortProcRoot, dir)
 	netDir := filepath.Join(dir, "net")
 	if err := os.MkdirAll(netDir, 0755); err != nil {
 		t.Fatalf("mkdir net dir: %v", err)
@@ -277,7 +309,7 @@ func TestCollectRuntimePortsResultReturnsErrorWhenOwnerLookupMissingAndFallbackF
 		return nil, errors.New("command failed")
 	}
 
-	got := collectRuntimePortsResult()
+	got := collectRuntimePortsFromProc(dir, false)
 	if got.Err == nil {
 		t.Fatal("expected owner lookup failure to surface when fallback fails")
 	}
@@ -294,7 +326,6 @@ func TestCollectRuntimePortsResultFillsMissingOwnersFromCommandFallback(t *testi
 	defer func() { runPortCommand = originalRunner }()
 
 	dir := t.TempDir()
-	t.Setenv(envPortProcRoot, dir)
 	netDir := filepath.Join(dir, "net")
 	if err := os.MkdirAll(netDir, 0755); err != nil {
 		t.Fatalf("mkdir net dir: %v", err)
@@ -323,7 +354,7 @@ func TestCollectRuntimePortsResultFillsMissingOwnersFromCommandFallback(t *testi
 		}
 	}
 
-	got := collectRuntimePortsResult()
+	got := collectRuntimePortsFromProc(dir, false)
 	if got.Err != nil {
 		t.Fatalf("expected command fallback to fill missing owners, got error %v", got.Err)
 	}

@@ -50,6 +50,15 @@ func serveSiteFaviconStream(c *echo.Context) error {
 		}
 		sources[source] = struct{}{}
 	}
+	allowed, err := allowedSiteIconSources(c)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "icon configuration unavailable")
+	}
+	for source := range sources {
+		if _, ok := allowed[source]; !ok {
+			return echo.NewHTTPError(http.StatusForbidden, "site favicon source is not configured or visible")
+		}
+	}
 
 	// The stream needs time to emit the last result after a favicon times out.
 	controller := http.NewResponseController(c.Response())

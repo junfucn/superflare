@@ -17,7 +17,6 @@ import (
 var jsonStringify = func(data interface{}) (string, error) {
 	buff := bytes.NewBuffer([]byte{})
 	encoder := json.NewEncoder(buff)
-	encoder.SetEscapeHTML(false)
 	err := encoder.Encode(data)
 	if err != nil {
 		return "", fmt.Errorf("json stringify failed: %w", err)
@@ -54,7 +53,9 @@ func Base64EncodeUrl(input string) string {
 }
 
 func Base64DecodeUrl(input string) ([]byte, error) {
-	unescaped, err := url.QueryUnescape(input)
+	// QueryParam already unescapes queries. Preserve literal '+' in Base64,
+	// while still accepting the escaped value returned by Base64EncodeUrl.
+	unescaped, err := url.PathUnescape(input)
 	if err != nil {
 		return []byte{}, err
 	}

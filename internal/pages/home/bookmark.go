@@ -72,7 +72,9 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 		if filter != "" &&
 			!strings.Contains(strings.ToLower(bookmark.Name), filterLower) &&
 			!strings.Contains(strings.ToLower(bookmark.URL), filterLower) &&
-			!strings.Contains(strings.ToLower(bookmark.LocalURL), filterLower) {
+			!strings.Contains(strings.ToLower(bookmark.LocalURL), filterLower) &&
+			!strings.Contains(strings.ToLower(bookmark.Desc), filterLower) &&
+			!strings.Contains(strings.ToLower(bookmark.Subdir), filterLower) {
 			continue
 		}
 		bookmarks = append(bookmarks, bookmark)
@@ -118,7 +120,7 @@ func generateBookmarkModules(filter string, options *model.Application, preferLo
 		}
 		b.WriteString(`<div class="bookmark-groups">`)
 		for _, category := range bookmarksData.Categories {
-			renderBookmarksWithCategories(b, groups[strings.TrimSpace(category.ID)], category, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
+			renderBookmarksWithCategories(b, groups[strings.TrimSpace(category.ID)], category, filter != "", options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		}
 		renderUngroupedBookmarks(b, groups[""], options.Locale, options.OpenBookmarkNewTab, options.EnableEncryptedLink, options.IconMode, preferLocal, requestURL)
 		b.WriteString(`</div>`)
@@ -160,7 +162,7 @@ func renderBookmarksWithoutCategories(b *bytes.Buffer, bookmarks []model.Bookmar
 	b.WriteString(`</ul></div>`)
 }
 
-func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, category model.Category, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
+func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, category model.Category, expandSubdirs bool, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
 	if len(bookmarks) == 0 {
 		return
 	}
@@ -181,7 +183,11 @@ func renderBookmarksWithCategories(b *bytes.Buffer, bookmarks []model.Bookmark, 
 		b.WriteString(`<div class="bookmark-subdirs">`)
 		for idx, subdir := range subdirOrder {
 			id := "subdir-" + category.ID + "-" + strconv.Itoa(idx)
-			b.WriteString(`<details class="bookmark-subdir"><summary title="`)
+			b.WriteString(`<details class="bookmark-subdir"`)
+			if expandSubdirs {
+				b.WriteString(` open`)
+			}
+			b.WriteString(`><summary title="`)
 			b.WriteString(template.HTMLEscapeString(subdir))
 			b.WriteString(`">`)
 			b.WriteString(template.HTMLEscapeString(subdir))
@@ -227,13 +233,11 @@ func localeUngroupedTitle(locale string) string {
 func renderBookmarkItem(b *bytes.Buffer, bookmark model.Bookmark, OpenBookmarkNewTab bool, EnableEncryptedLink bool, IconMode string, preferLocal bool, requestURL *fn.DynamicURL) {
 	templateURL := renderBookmarkHref(bookmark.URL, bookmark.LocalURL, preferLocal, EnableEncryptedLink, requestURL)
 	templateIcon := renderBookmarkIcon(bookmark.Icon, bookmark.URL, IconMode)
-	if OpenBookmarkNewTab {
-		b.WriteString(`<li><a target="_blank" rel="noopener" href="`)
-	} else {
-		b.WriteString(`<li><a rel="noopener" href="`)
-	}
-	b.WriteString(template.HTMLEscapeString(templateURL))
-	b.WriteString(`" class="bookmark"`)
+	b.WriteString(`<li>`)
+	b.WriteString(`<a`)
+	renderBookmarkNavigationAttributes(b, templateURL, OpenBookmarkNewTab)
+	b.WriteString(` class="bookmark"`)
+	renderNetworkAttributes(b, bookmark.URL, bookmark.LocalURL, EnableEncryptedLink, requestURL)
 	if description := strings.TrimSpace(bookmark.Desc); description != "" {
 		b.WriteString(` data-bookmark-description="`)
 		b.WriteString(template.HTMLEscapeString(description))

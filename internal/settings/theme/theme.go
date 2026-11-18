@@ -14,6 +14,7 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
 	"github.com/junfuchang/superflare/internal/background"
+	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/junfuchang/superflare/internal/pool"
 	settingsroot "github.com/junfuchang/superflare/internal/settings"
 	"github.com/junfuchang/superflare/internal/statuspage"
@@ -22,12 +23,27 @@ import (
 var beginUploadedBackgroundActivation = background.BeginStagedUploadedBackgroundActivation
 var discardUploadedBackgroundStage = background.DiscardStagedUploadedBackgrounds
 
+const themeRequestMaxBytes = (32 << 20) + (1 << 20)
+
 func RegisterRouting(e *echo.Echo) {
 	e.GET(define.SettingPages.Theme.Path, pageTheme, auth.AuthRequired)
 	e.POST(define.SettingPages.Theme.Path, updateThemes, auth.AuthRequired)
 }
 
 func updateThemes(c *echo.Context) error {
+	req := c.Request()
+	if req.ContentLength > themeRequestMaxBytes {
+		return statuspage.HTML(c, http.StatusRequestEntityTooLarge, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusRequestEntityTooLarge, "theme request too large"))
+	}
+	if err := netutil.SetUploadDeadlines(c.Response()); err != nil {
+		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
+	}
+	req.Body = http.MaxBytesReader(c.Response(), req.Body, themeRequestMaxBytes)
+	defer func() {
+		if req.MultipartForm != nil {
+			_ = req.MultipartForm.RemoveAll()
+		}
+	}()
 	var body struct {
 		Action                string `form:"action"`
 		Theme                 string `form:"theme"`
@@ -41,6 +57,10 @@ func updateThemes(c *echo.Context) error {
 		GlassIntensity        string `form:"glass-intensity"`
 	}
 	if err := c.Bind(&body); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return statuspage.HTML(c, http.StatusRequestEntityTooLarge, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusRequestEntityTooLarge, "theme request too large"))
+		}
 		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, "missing form data"))
 	}
 	if strings.TrimSpace(body.Theme) == "" {
@@ -97,7 +117,28 @@ func updateThemes(c *echo.Context) error {
 			}
 		}
 	}
-	if themeName == "custom" && strings.TrimSpace(body.Action) == "custom-theme" {
+	// Receive and validate the request before taking the shared background
+	// lock, so a slow upload cannot block backups, restores or other saves.
+	hasBackgroundImageField := hasFormField(c, "background-image")
+	update := model.Application{
+		Theme:                 themeName,
+		CustomThemeBackground: backgroundColor,
+		CustomThemePrimary:    primaryColor,
+		CustomThemeAccent:     accentColor,
+		BackgroundImage:       strings.TrimSpace(body.BackgroundImage),
+		BackgroundBlur:        backgroundBlur,
+		BackgroundOpacity:     backgroundOpacity,
+		GlassEffect:           glassEffect,
+		GlassIntensity:        glassIntensity,
+	}
+	return background.WithUploadedBackgroundLock(func() error {
+		return updateThemesLocked(c, body.Action, hasBackgroundImageField, update)
+	})
+}
+
+func updateThemesLocked(c *echo.Context, action string, hasBackgroundImageField bool, update model.Application) error {
+	themeName := update.Theme
+	if themeName == "custom" && strings.TrimSpace(action) == "custom-theme" {
 		currentOptions, err := data.GetAllSettingsOptions()
 		if err != nil {
 			statuspage.BindOptionsLoadError(c, err)
@@ -105,25 +146,11 @@ func updateThemes(c *echo.Context) error {
 		}
 		statuspage.BindOptions(c, currentOptions)
 		locale := currentOptions.Locale
-		hasBackgroundImageField := hasFormField(c, "background-image")
-		backgroundImage := strings.TrimSpace(body.BackgroundImage)
-		backgroundImageMode := "url"
+		update.ThemeBase = resolveThemeBase(currentOptions)
+		update.BackgroundImageMode = "url"
 		if !hasBackgroundImageField {
-			backgroundImage = currentOptions.BackgroundImage
-			backgroundImageMode = currentOptions.BackgroundImageMode
-		}
-		update := model.Application{
-			Theme:                 themeName,
-			ThemeBase:             resolveThemeBase(currentOptions),
-			CustomThemeBackground: backgroundColor,
-			CustomThemePrimary:    primaryColor,
-			CustomThemeAccent:     accentColor,
-			BackgroundImage:       backgroundImage,
-			BackgroundImageMode:   backgroundImageMode,
-			BackgroundBlur:        backgroundBlur,
-			BackgroundOpacity:     backgroundOpacity,
-			GlassEffect:           glassEffect,
-			GlassIntensity:        glassIntensity,
+			update.BackgroundImage = currentOptions.BackgroundImage
+			update.BackgroundImageMode = currentOptions.BackgroundImageMode
 		}
 		if strings.HasPrefix(update.BackgroundImage, "/user-assets/") {
 			update.BackgroundImageMode = "upload"
@@ -140,6 +167,11 @@ func updateThemes(c *echo.Context) error {
 		}
 		if update.BackgroundImage == "" {
 			update.BackgroundImageMode = "url"
+		}
+		if !stagedUpload && background.UsesUploadedBackground(update) {
+			if err := background.CheckUploadedBackground(); err != nil {
+				return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(locale, http.StatusBadRequest, "uploaded background is unavailable; upload the image again or clear the background image field"))
+			}
 		}
 		var activation *background.StagedUploadedBackgroundActivation
 		if stagedUpload {
@@ -181,9 +213,9 @@ func updateThemes(c *echo.Context) error {
 		if err := data.UpdateThemeSettings(
 			themeName,
 			"",
-			backgroundColor,
-			primaryColor,
-			accentColor,
+			update.CustomThemeBackground,
+			update.CustomThemePrimary,
+			update.CustomThemeAccent,
 		); err != nil {
 			return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 		}
@@ -195,7 +227,7 @@ func updateThemes(c *echo.Context) error {
 	if err := define.UpdatePagePalettes(); err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	return pageTheme(c)
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.Theme.Path)
 }
 
 func saveUploadedBackground(c *echo.Context) (string, error) {
@@ -344,5 +376,5 @@ func pageTheme(c *echo.Context) error {
 	m["OptionGlassEffect"] = options.GlassEffect
 	m["OptionGlassIntensity"] = options.GlassIntensity
 	m["RenderWarnings"] = renderWarnings
-	return c.Render(http.StatusOK, "settings.html", m)
+	return settingsroot.Render(c, http.StatusOK, m)
 }

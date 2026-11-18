@@ -4,14 +4,10 @@ set +u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 
-if [ -n "${TRIM_PKGETC:-}" ]; then
-    ETC_DIR="${TRIM_PKGETC}"
-else
-    ETC_DIR="$(CDPATH= cd -- "${SCRIPT_DIR}/../etc" 2>/dev/null && pwd)"
-fi
-
 # shellcheck source=/dev/null
 . "${SCRIPT_DIR}/common.sh"
+
+prepare_shared_storage || exit 1
 
 emit_wizard_value() {
     local key="$1"

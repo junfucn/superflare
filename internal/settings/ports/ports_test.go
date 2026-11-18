@@ -1,7 +1,9 @@
 package ports
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -25,6 +27,15 @@ func ensurePortsSettingsConfig(t *testing.T) {
 	if err := data.EnsureAppConfigExists(); err != nil {
 		t.Fatalf("EnsureAppConfigExists: %v", err)
 	}
+}
+
+func currentPortRevision(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile("ports.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
 }
 
 func TestParsePortBindings(t *testing.T) {
@@ -84,6 +95,7 @@ func TestUpdatePortRemarksReadsFormValue(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("ports", `[{"Port":3060,"Protocol":"tcp","Remark":"dev"}]`)
+	form.Set("revision", currentPortRevision(t))
 	req := httptest.NewRequest(http.MethodPost, "/settings/ports", strings.NewReader(form.Encode()))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	rec := httptest.NewRecorder()
@@ -213,6 +225,7 @@ func TestUpdatePortRemarksKeepsHiddenPortsWhenNotShown(t *testing.T) {
 	form := url.Values{}
 	form.Set("ports", `[{"Port":3060,"Protocol":"tcp","Remark":"dev"}]`)
 	form.Set("includeHidden", "0")
+	form.Set("revision", currentPortRevision(t))
 	req := httptest.NewRequest(http.MethodPost, "/settings/ports", strings.NewReader(form.Encode()))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	rec := httptest.NewRecorder()
@@ -247,6 +260,7 @@ func TestUpdatePortRemarksReturnsConfigErrorWhenExistingBindingsBroken(t *testin
 	form := url.Values{}
 	form.Set("ports", `[{"Port":3060,"Protocol":"tcp","Remark":"dev"}]`)
 	form.Set("includeHidden", "0")
+	form.Set("revision", currentPortRevision(t))
 	req := httptest.NewRequest(http.MethodPost, "/settings/ports", strings.NewReader(form.Encode()))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	rec := httptest.NewRecorder()
@@ -277,6 +291,10 @@ func TestUpdatePortRemarksReturnsConfigErrorWhenSettingsConfigBroken(t *testing.
 	if err := os.WriteFile("config.yml", []byte("Title: [broken"), 0644); err != nil {
 		t.Fatalf("write config.yml: %v", err)
 	}
+	originalPorts := []byte("ports:\n- port: 8080\n  protocol: tcp\n  remark: preserved\n")
+	if err := os.WriteFile("ports.yaml", originalPorts, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	form := url.Values{}
 	form.Set("ports", `[{"Port":3060,"Protocol":"tcp","Remark":"dev"}]`)
@@ -298,6 +316,10 @@ func TestUpdatePortRemarksReturnsConfigErrorWhenSettingsConfigBroken(t *testing.
 	if !strings.Contains(rec.Body.String(), "detail") {
 		t.Fatalf("expected detailed settings config error payload, got %s", rec.Body.String())
 	}
+	after, err := os.ReadFile("ports.yaml")
+	if err != nil || string(after) != string(originalPorts) {
+		t.Fatalf("failed request changed port bindings: %s, err=%v", after, err)
+	}
 }
 
 func TestUpdatePortRemarksReturnsServerErrorWhenSaveFails(t *testing.T) {
@@ -315,6 +337,7 @@ func TestUpdatePortRemarksReturnsServerErrorWhenSaveFails(t *testing.T) {
 	form := url.Values{}
 	form.Set("ports", `[{"Port":3060,"Protocol":"tcp","Remark":"dev"}]`)
 	form.Set("includeHidden", "1")
+	form.Set("revision", "unreadable-file")
 	req := httptest.NewRequest(http.MethodPost, "/settings/ports", strings.NewReader(form.Encode()))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	rec := httptest.NewRecorder()
@@ -335,6 +358,66 @@ func TestUpdatePortRemarksReturnsServerErrorWhenSaveFails(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "detail") {
 		t.Fatalf("expected save failure detail payload, got %s", rec.Body.String())
+	}
+}
+
+func TestPortSaveRejectsStaleMissingAndNullSnapshots(t *testing.T) {
+	t.Chdir(t.TempDir())
+	ensurePortsSettingsConfig(t)
+	if err := data.EnsureRuntimeDataFiles(); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.UpdatePortCollectionEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	rec := httptest.NewRecorder()
+	if err := pagePortsData(e.NewContext(httptest.NewRequest(http.MethodGet, portsDataPath(), nil), rec)); err != nil {
+		t.Fatal(err)
+	}
+	var loaded portsDataPayload
+	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil || rec.Code != http.StatusOK || loaded.Revision == "" {
+		t.Fatalf("invalid loaded snapshot: %s, err=%v", rec.Body.String(), err)
+	}
+	post := func(ports, revision string) *httptest.ResponseRecorder {
+		t.Helper()
+		form := url.Values{"ports": {ports}, "revision": {revision}, "includeHidden": {"1"}}
+		req := httptest.NewRequest(http.MethodPost, "/settings/ports", strings.NewReader(form.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		if err := updatePortRemarks(e.NewContext(req, rec)); err != nil {
+			t.Fatal(err)
+		}
+		return rec
+	}
+	first := post(`[{"Port":8080,"Remark":"first tab"}]`, loaded.Revision)
+	var saved struct {
+		OK       bool   `json:"ok"`
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &saved); err != nil || first.Code != http.StatusOK || !saved.OK || saved.Revision == loaded.Revision || saved.Revision != currentPortRevision(t) {
+		t.Fatalf("invalid save snapshot: %s, err=%v", first.Body.String(), err)
+	}
+	for _, tc := range []struct {
+		ports, revision string
+		status          int
+	}{
+		{`[{"Port":8080,"Remark":"stale second tab"}]`, loaded.Revision, http.StatusConflict},
+		{`[]`, "", http.StatusConflict},
+		{`null`, saved.Revision, http.StatusBadRequest},
+		{`[null]`, saved.Revision, http.StatusBadRequest},
+		{`[{}]`, saved.Revision, http.StatusBadRequest},
+		{`[{"Port":0}]`, saved.Revision, http.StatusBadRequest},
+	} {
+		got := post(tc.ports, tc.revision)
+		if got.Code != tc.status || currentPortRevision(t) != saved.Revision {
+			t.Fatalf("rejected request changed the saved file or returned wrong status: %d %s", got.Code, got.Body.String())
+		}
+	}
+	cleared := post(`[]`, saved.Revision)
+	bindings, err := data.LoadPortBindings()
+	if cleared.Code != http.StatusOK || err != nil || len(bindings.Items) != 0 {
+		t.Fatalf("explicit empty list with current revision must clear bindings: %s, %#v, %v", cleared.Body.String(), bindings, err)
 	}
 }
 
@@ -515,6 +598,96 @@ func TestPagePortsDataReturnsWarningsWhenOwnerResolutionIncomplete(t *testing.T)
 	}
 }
 
+func TestPagePortsDataHonorsCollectionSetting(t *testing.T) {
+	t.Chdir(t.TempDir())
+	ensurePortsSettingsConfig(t)
+	if err := data.SavePortBindings(model.Ports{Items: []model.PortBinding{
+		{Port: 5353, Protocol: "udp", Hidden: true},
+		{Port: 8080, Protocol: "tcp", Remark: "saved service"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	bindingsBefore, err := os.ReadFile("ports.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalCollector := portscollectorCollectReportWithBindingsErr
+	t.Cleanup(func() { portscollectorCollectReportWithBindingsErr = originalCollector })
+	calls := 0
+	portscollectorCollectReportWithBindingsErr = func(bindings map[string]model.PortBinding, includeHidden bool) (portscollector.CollectionReport, error) {
+		calls++
+		return portscollector.CollectionReport{
+			Items: []model.PortInfo{{Port: 12345, Protocol: "tcp", Running: true, PID: 321, ServiceName: "live service"}},
+		}, nil
+	}
+
+	for _, tc := range []struct {
+		name          string
+		enabled       bool
+		includeHidden bool
+		wantCalls     int
+		wantPorts     []int
+	}{
+		{name: "default enabled", enabled: true, wantCalls: 1, wantPorts: []int{12345}},
+		{name: "disabled", wantCalls: 1, wantPorts: []int{8080}},
+		{name: "disabled with hidden", includeHidden: true, wantCalls: 1, wantPorts: []int{5353, 8080}},
+		{name: "reenabled", enabled: true, wantCalls: 2, wantPorts: []int{12345}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name != "default enabled" {
+				if err := data.UpdatePortCollectionEnabled(tc.enabled); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := portsDataPath()
+			if tc.includeHidden {
+				path += "?includeHidden=1"
+			}
+			rec := httptest.NewRecorder()
+			e := echo.New()
+			if err := pagePortsData(e.NewContext(httptest.NewRequest(http.MethodGet, path, nil), rec)); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var payload portsDataPayload
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if calls != tc.wantCalls {
+				t.Fatalf("runtime collector called %d times, expected %d", calls, tc.wantCalls)
+			}
+			if !payload.OK || payload.CollectionEnabled != tc.enabled || len(payload.Items) != len(tc.wantPorts) {
+				t.Fatalf("unexpected payload: %#v", payload)
+			}
+			for i, item := range payload.Items {
+				if item.Port != tc.wantPorts[i] {
+					t.Fatalf("unexpected port at row %d: %#v", i, item)
+				}
+				if !tc.enabled {
+					if item.Running || item.PID != 0 || item.ServiceName != "" {
+						t.Fatalf("disabled response contains runtime information: %#v", item)
+					}
+					if item.Port == 5353 && (!item.Hidden || item.Protocol != "udp") {
+						t.Fatalf("hidden binding was not preserved: %#v", item)
+					}
+					if item.Port == 8080 && item.Remark != "saved service" {
+						t.Fatalf("saved remark was not preserved: %#v", item)
+					}
+				}
+			}
+			if !tc.enabled && (!strings.Contains(rec.Body.String(), `"collectionEnabled":false`) || len(payload.Warnings) != 1) {
+				t.Fatalf("disabled status missing: %s", rec.Body.String())
+			}
+		})
+	}
+	bindingsAfter, err := os.ReadFile("ports.yaml")
+	if err != nil || string(bindingsAfter) != string(bindingsBefore) {
+		t.Fatalf("collection requests changed saved bindings: %s, err=%v", bindingsAfter, err)
+	}
+}
+
 func TestPagePortsRendersWithoutRuntimeCollection(t *testing.T) {
 	originalCollector := portscollectorCollectReportWithBindingsErr
 	called := false
@@ -553,6 +726,9 @@ func TestPagePortsRendersWithoutRuntimeCollection(t *testing.T) {
 			dataURI, ok := m["PortsDataURI"].(string)
 			if !ok || dataURI != "/settings/ports/data" {
 				t.Fatalf("unexpected PortsDataURI: %#v", m["PortsDataURI"])
+			}
+			if m["PortCollectionEnabled"] != true || m["PortCollectionURI"] != "/settings/ports/collection" {
+				t.Fatalf("unexpected collection settings: enabled=%v uri=%v", m["PortCollectionEnabled"], m["PortCollectionURI"])
 			}
 		},
 	}

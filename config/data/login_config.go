@@ -18,6 +18,10 @@ var envAssignmentPattern = regexp.MustCompile(`^(\s*)(export\s+)?([A-Za-z_][A-Za
 const (
 	defaultLoginUser = "admin"
 	defaultLoginPass = "admin"
+	// Keep the signed username cookie and the worst-case URL-encoded login
+	// form below their 4 KiB and 16 KiB limits, respectively.
+	LoginUserMaxBytes = 256
+	LoginPassMaxBytes = 4096
 )
 
 func normalizeEnvContentForINI(content []byte) []byte {
@@ -38,7 +42,8 @@ func normalizeEnvContentForINI(content []byte) []byte {
 	return []byte(strings.Join(lines, "\n"))
 }
 
-func loadEnvFileFromContent(content []byte) (*ini.File, error) {
+// LoadEnvFileFromContent parses .env assignments with optional export prefixes.
+func LoadEnvFileFromContent(content []byte) (*ini.File, error) {
 	envs, err := ini.LoadSources(ini.LoadOptions{
 		IgnoreInlineComment: true,
 	}, normalizeEnvContentForINI(content))
@@ -53,11 +58,11 @@ func readEnvValueFromContent(content []byte, key string) (string, error) {
 	if key == "" {
 		return "", nil
 	}
-	envs, err := loadEnvFileFromContent(content)
+	envs, err := LoadEnvFileFromContent(content)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(envs.Section("").Key(key).String()), nil
+	return strings.TrimSpace(envs.Section("").Key(key).Value()), nil
 }
 
 func readEnvValueFromFile(filePath string, key string) (string, error) {
@@ -109,10 +114,13 @@ func formatEnvValue(value string) string {
 	if value == "" {
 		return ""
 	}
-	if strings.TrimSpace(value) != value || strings.ContainsAny(value, " \t#;\"'") {
-		escaped := strings.ReplaceAll(value, `\`, `\\`)
-		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-		return `"` + escaped + `"`
+	// The INI reader treats triple-quoted values literally, including quotes
+	// and backslashes. Ordinary double quotes are only stripped without escapes.
+	if strings.Contains(value, `"`) {
+		return `"""` + value + `"""`
+	}
+	if strings.TrimSpace(value) != value || strings.ContainsAny(value, " \t#;'`\\") {
+		return `"` + value + `"`
 	}
 	return value
 }
@@ -157,6 +165,9 @@ func envFilePath() (string, error) {
 }
 
 func ValidateLoginCredentialPair(user string, pass string, source string) error {
+	if err := validateLoginCredentialValues(user, pass, source); err != nil {
+		return err
+	}
 	user = strings.TrimSpace(user)
 	pass = strings.TrimSpace(pass)
 	source = strings.TrimSpace(source)
@@ -169,15 +180,29 @@ func ValidateLoginCredentialPair(user string, pass string, source string) error 
 	return nil
 }
 
+func validateLoginCredentialValues(user string, pass string, source string) error {
+	if len(user) > LoginUserMaxBytes || len(pass) > LoginPassMaxBytes {
+		return fmt.Errorf("%s login credentials exceed the limit: username %d bytes, password %d bytes", source, LoginUserMaxBytes, LoginPassMaxBytes)
+	}
+	if strings.ContainsAny(user+pass, "\r\n\x00") {
+		return fmt.Errorf("%s login credentials cannot contain line breaks or NUL", source)
+	}
+	return nil
+}
+
 func GetLoginConfig() (user string, pass string, err error) {
-	return getLoginConfig(resetPersistentLoginCredentialsToDefault)
+	return getLoginConfig(repairPersistentLoginCredentials)
 }
 
+// GetLoginConfigLocked requires the caller to hold the config write lock.
 func GetLoginConfigLocked() (user string, pass string, err error) {
-	return getLoginConfig(resetPersistentLoginCredentialsToDefaultLocked)
+	return getLoginConfig(func(envPath string, envExists bool) (string, string, error) {
+		err := resetPersistentLoginCredentialsToDefaultLocked(envPath, envExists)
+		return defaultLoginUser, defaultLoginPass, err
+	})
 }
 
-func getLoginConfig(repair func(envPath string, envExists bool) error) (user string, pass string, err error) {
+func getLoginConfig(repair func(envPath string, envExists bool) (string, string, error)) (user string, pass string, err error) {
 	options, err := GetAllSettingsOptions()
 	if err != nil {
 		return "", "", fmt.Errorf("read login config failed: %w", err)
@@ -208,17 +233,19 @@ func getLoginConfig(repair func(envPath string, envExists bool) error) (user str
 		}
 	}
 
-	if loginCredentialPairNeedsDefault(user, pass) || (envExists && loginCredentialPairNeedsDefault(envUser, envPass)) {
-		if err := repair(envPath, envExists); err != nil {
-			return user, pass, fmt.Errorf("repair login config failed: %w", err)
+	if loginCredentialPairNeedsDefault(user, pass) {
+		repairedUser, repairedPass, repairErr := repair(envPath, envExists)
+		if repairErr != nil {
+			return user, pass, fmt.Errorf("repair login config failed: %w", repairErr)
 		}
-		return defaultLoginUser, defaultLoginPass, nil
+		return repairedUser, repairedPass, nil
 	}
 
 	if err := ValidateLoginCredentialPair(user, pass, "config.yml"); err != nil {
 		return user, pass, fmt.Errorf("read login config failed: %w", err)
 	}
-	if envExists {
+	// An optional or incomplete env override must not reset valid persisted credentials.
+	if envExists && !loginCredentialPairNeedsDefault(envUser, envPass) {
 		if err := ValidateLoginCredentialPair(envUser, envPass, ".env"); err != nil {
 			return user, pass, fmt.Errorf("read login config failed: %w", err)
 		}
@@ -231,10 +258,37 @@ func loginCredentialPairNeedsDefault(user string, pass string) bool {
 	return strings.TrimSpace(user) == "" || strings.TrimSpace(pass) == ""
 }
 
-func resetPersistentLoginCredentialsToDefault(envPath string, envExists bool) error {
-	return withConfigWriteLock(func() error {
-		return resetPersistentLoginCredentialsToDefaultLocked(envPath, envExists)
+// EnsureLoginConfigInRawConfig preserves the active account for legacy backups.
+// A partial account is rejected rather than combining credentials from two accounts.
+func EnsureLoginConfigInRawConfig(raw []byte, fallbackUser, fallbackPass string) ([]byte, error) {
+	options, err := LoadAppConfigFromRaw(raw)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(options.LoginUser) != "" || strings.TrimSpace(options.LoginPass) != "" {
+		if err := ValidateLoginCredentialPair(options.LoginUser, options.LoginPass, "restored config.yml"); err != nil {
+			return nil, err
+		}
+		return raw, nil
+	}
+	if err := ValidateLoginCredentialPair(fallbackUser, fallbackPass, "active account for legacy restore"); err != nil {
+		return nil, err
+	}
+	return upsertRawConfigFields(raw,
+		yaml.MapItem{Key: "LoginUser", Value: fallbackUser},
+		yaml.MapItem{Key: "LoginPass", Value: fallbackPass},
+	)
+}
+
+func repairPersistentLoginCredentials(_ string, _ bool) (user string, pass string, err error) {
+	err = withConfigWriteLock(func() error {
+		// Another writer may have saved credentials or changed .env since the
+		// incomplete snapshot. Re-read both files before deciding to repair.
+		var readErr error
+		user, pass, readErr = GetLoginConfigLocked()
+		return readErr
 	})
+	return user, pass, err
 }
 
 func resetPersistentLoginCredentialsToDefaultLocked(envPath string, envExists bool) error {
@@ -285,6 +339,13 @@ func ResetEnvLoginCredentialsToDefault(filePath string) error {
 }
 
 func UpdateLoginConfig(user string, pass string) error {
+	return UpdateLoginConfigWithCallback(user, pass, nil)
+}
+
+// UpdateLoginConfigWithCallback publishes in-memory state before releasing the
+// config write lock, so runtime readers cannot be left behind a later writer.
+// afterCommit must not acquire the config write lock itself.
+func UpdateLoginConfigWithCallback(user string, pass string, afterCommit func()) error {
 	if err := ValidateLoginCredentialPair(user, pass, "login config update"); err != nil {
 		return err
 	}
@@ -332,6 +393,9 @@ func UpdateLoginConfig(user string, pass string) error {
 			return model.Application{}, fmt.Errorf("save login config failed: %w", err)
 		}
 		invalidateFileCachePath(configPath)
+		if afterCommit != nil {
+			afterCommit()
+		}
 		return options, nil
 	})
 	return err

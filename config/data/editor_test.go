@@ -379,10 +379,13 @@ func TestUpdateBookmarksFromEditorRollsBackWhenSecondFileRenameFails(t *testing.
 		t.Fatalf("write apps: %v", err)
 	}
 
-	renameCalls := 0
 	editorDataRenamePath = func(oldPath string, newPath string) error {
-		renameCalls++
-		if renameCalls == 3 {
+		for _, path := range []string{appsPath, bookmarksPath} {
+			if _, err := os.ReadFile(path); err != nil {
+				t.Fatalf("live bookmark config disappeared during replacement or rollback: %v", err)
+			}
+		}
+		if newPath == bookmarksPath && strings.Contains(filepath.Base(oldPath), ".tmp-") {
 			return errors.New("forced rename failure")
 		}
 		return originalRename(oldPath, newPath)
@@ -439,8 +442,8 @@ func TestUpdateBookmarksFromEditorSerializesWithSettingsConfigWrites(t *testing.
 	defer func() { editorDataRenamePath = originalRename }()
 	var once sync.Once
 	editorDataRenamePath = func(oldPath string, newPath string) error {
-		cleanOld := filepath.Base(filepath.Clean(oldPath))
-		if cleanOld == "apps.yml" || cleanOld == "bookmarks.yml" {
+		cleanNew := filepath.Base(filepath.Clean(newPath))
+		if cleanNew == "apps.yml" || cleanNew == "bookmarks.yml" {
 			once.Do(func() {
 				startSettingsUpdate <- struct{}{}
 				<-releaseEditorSave

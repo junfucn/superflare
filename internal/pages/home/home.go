@@ -7,17 +7,18 @@ import (
 	"html/template"
 	mathrand "math/rand"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/labstack/echo/v5"
 
 	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/config/validation"
 	"github.com/junfuchang/superflare/internal/auth"
 	"github.com/junfuchang/superflare/internal/background"
 	"github.com/junfuchang/superflare/internal/fn"
@@ -95,19 +96,19 @@ const _cspScriptNone = "script-src 'none'; "
 const _inlineClockScript = `(function(){var container=document.getElementById("live-datetime");if(!container){return;}var dateNode=container.querySelector('[data-role="date"]');var dayNode=container.querySelector('[data-role="day"]');var timeNode=container.querySelector('[data-role="time"]');var locale=container.getAttribute("data-locale")||"zh";var browserLocale=locale==="en"?"en-US":"zh-CN";function formatDate(now){if(locale==="en"){return new Intl.DateTimeFormat(browserLocale,{month:"short",day:"2-digit",year:"numeric"}).format(now);}return new Intl.DateTimeFormat(browserLocale,{year:"numeric",month:"long",day:"numeric"}).format(now);}function formatDay(now){return new Intl.DateTimeFormat(browserLocale,{weekday:"long"}).format(now);}function pad(num){return String(num).padStart(2,"0");}function tick(){var now=new Date();if(dateNode){dateNode.textContent=formatDate(now);}if(dayNode){dayNode.textContent=formatDay(now);}if(timeNode){timeNode.textContent=[pad(now.getHours()),pad(now.getMinutes()),pad(now.getSeconds())].join(":");}}tick();window.setInterval(tick,1000);}());`
 const _inlineBackgroundLoaderScript = background.InlineLoaderScript
 const _inlineBookmarkTooltipScript = `(function(){var selector="[data-bookmark-description]";var tooltipId="bookmark-description-tooltip";var tooltip=document.getElementById(tooltipId);if(!tooltip){tooltip=document.createElement("div");tooltip.id=tooltipId;tooltip.className="bookmark-description-tooltip";tooltip.setAttribute("role","tooltip");tooltip.hidden=true;document.body.appendChild(tooltip);}var hoverTarget=null;var hoverReady=false;var hoverTimer=null;var focusTarget=null;var suppressedHoverTarget=null;var suppressedFocusTarget=null;var activeTarget=null;var originalAriaDescribedBy=null;function cancelHoverTimer(){if(hoverTimer!==null){window.clearTimeout(hoverTimer);hoverTimer=null;}}function clearHover(){cancelHoverTimer();hoverTarget=null;hoverReady=false;}function restoreDescription(){if(!activeTarget){return;}if(originalAriaDescribedBy===null){activeTarget.removeAttribute("aria-describedby");}else{activeTarget.setAttribute("aria-describedby",originalAriaDescribedBy);}activeTarget=null;originalAriaDescribedBy=null;}function hideRendered(){restoreDescription();tooltip.hidden=true;tooltip.textContent="";}function position(target){var gap=8;var targetRect=target.getBoundingClientRect();var tooltipRect=tooltip.getBoundingClientRect();var left=targetRect.left+(targetRect.width-tooltipRect.width)/2;var top=targetRect.bottom+gap;if(top+tooltipRect.height>window.innerHeight-gap){top=targetRect.top-tooltipRect.height-gap;}left=Math.max(gap,Math.min(left,window.innerWidth-tooltipRect.width-gap));top=Math.max(gap,Math.min(top,window.innerHeight-tooltipRect.height-gap));tooltip.style.left=Math.round(left)+"px";tooltip.style.top=Math.round(top)+"px";}function show(target){if(!target||!target.isConnected){hideRendered();return;}var description=target.getAttribute("data-bookmark-description");if(!description||!description.trim()){hideRendered();return;}if(activeTarget!==target){restoreDescription();if(!target.isConnected){hideRendered();return;}activeTarget=target;originalAriaDescribedBy=target.getAttribute("aria-describedby");var describedBy=originalAriaDescribedBy?originalAriaDescribedBy.trim().split(/\s+/):[];if(describedBy.indexOf(tooltipId)===-1){describedBy.push(tooltipId);}target.setAttribute("aria-describedby",describedBy.join(" "));}tooltip.textContent=description;tooltip.hidden=false;position(target);}function reconcile(){if(hoverTarget&&!hoverTarget.isConnected){clearHover();}if(focusTarget&&!focusTarget.isConnected){focusTarget=null;}var target=focusTarget||(hoverReady?hoverTarget:null);if(!target){hideRendered();return;}show(target);}function reset(){clearHover();focusTarget=null;hideRendered();}function findTarget(event){var origin=event.target;if(!origin||!origin.closest){return null;}return origin.closest(selector);}function movedWithin(target,relatedTarget){return relatedTarget&&target.contains(relatedTarget);}document.addEventListener("pointerover",function(event){var target=findTarget(event);if(suppressedHoverTarget&&target!==suppressedHoverTarget&&event.target&&event.target.isConnected){suppressedHoverTarget=null;}if(!target||movedWithin(target,event.relatedTarget)){return;}if(target===suppressedHoverTarget){clearHover();reconcile();return;}clearHover();hoverTarget=target;var scheduledTarget=target;hoverTimer=window.setTimeout(function(){hoverTimer=null;if(hoverTarget!==scheduledTarget||!scheduledTarget.isConnected){if(hoverTarget===scheduledTarget){hoverTarget=null;hoverReady=false;}reconcile();return;}hoverReady=true;reconcile();},500);reconcile();});document.addEventListener("pointerout",function(event){var target=findTarget(event);if(!target||movedWithin(target,event.relatedTarget)){return;}if(target===suppressedHoverTarget&&event.relatedTarget&&event.relatedTarget.isConnected){suppressedHoverTarget=null;}if(target===hoverTarget){clearHover();reconcile();}});document.addEventListener("focusin",function(event){var target=findTarget(event);if(suppressedFocusTarget&&target!==suppressedFocusTarget&&event.target&&event.target.isConnected){suppressedFocusTarget=null;}if(target===suppressedFocusTarget){focusTarget=null;reconcile();return;}if(target&&target.isConnected){focusTarget=target;reconcile();}});document.addEventListener("focusout",function(event){var target=findTarget(event);if(!target||movedWithin(target,event.relatedTarget)){return;}if(target===suppressedFocusTarget&&event.relatedTarget&&event.relatedTarget.isConnected){suppressedFocusTarget=null;}if(target===focusTarget){focusTarget=null;reconcile();}});function resetOnActivation(event){var target=findTarget(event);if(!target||(event.type==="auxclick"&&event.button!==1)){return;}suppressedHoverTarget=target;suppressedFocusTarget=target;reset();}document.addEventListener("click",resetOnActivation,true);document.addEventListener("auxclick",resetOnActivation,true);function cleanupDisconnectedTargets(){var changed=false;if(hoverTarget&&!hoverTarget.isConnected){clearHover();changed=true;}if(focusTarget&&!focusTarget.isConnected){focusTarget=null;changed=true;}if(suppressedHoverTarget&&!suppressedHoverTarget.isConnected){suppressedHoverTarget=null;changed=true;}if(suppressedFocusTarget&&!suppressedFocusTarget.isConnected){suppressedFocusTarget=null;changed=true;}if(activeTarget&&!activeTarget.isConnected){changed=true;}if(changed){reconcile();}}var observer=new MutationObserver(cleanupDisconnectedTargets);observer.observe(document.body,{childList:true,subtree:true});window.addEventListener("scroll",reset,true);document.addEventListener("keydown",function(event){if(event.key==="Escape"){reset();}});document.addEventListener("visibilitychange",reset);window.addEventListener("pagehide",reset);}());`
-const _inlineApplicationSubdirectoryModalScript = `(function(){
-var modalSelector=".application-subdirectory-modal";
-var triggerSelector=".application-subdirectory-trigger a[aria-controls]";
-var closeSelector=".application-subdirectory-close,.application-subdirectory-backdrop";
-var panelSelector=".application-subdirectory-panel";
-var inertMarker="data-application-subdirectory-inert";
+const _inlineHomeDialogScript = `(function(){
+var modalSelector=".application-subdirectory-modal,.page-warnings-modal";
+var triggerSelector=".application-subdirectory-trigger a[aria-controls],#btn-open-warnings";
+var closeSelector=".application-subdirectory-close,.application-subdirectory-backdrop,.page-warnings-close,.page-warnings-backdrop";
+var panelSelector='[role="dialog"]';
+var inertMarker="data-home-dialog-inert";
 var activeModal=null;
 var lastTrigger=null;
 function triggers(){return Array.prototype.slice.call(document.querySelectorAll(triggerSelector));}
 function modalFromHash(){
 if(!window.location.hash||window.location.hash==="#"){return null;}
 var id=window.location.hash.slice(1);
-if(!/^application-subdir-modal-\d+$/.test(id)){return null;}
+if(id!=="page-warnings-modal"&&!/^application-subdir-modal-\d+$/.test(id)){return null;}
 var candidate=document.getElementById(id);
 return candidate&&candidate.matches(modalSelector)?candidate:null;
 }
@@ -139,49 +140,63 @@ child.removeAttribute("inert");
 child.removeAttribute(inertMarker);
 });
 }
-function focusPanel(modal){
-var panel=panelFor(modal);
-if(!panel){return;}
-window.requestAnimationFrame(function(){
-if(activeModal===modal){panel.focus({preventScroll:true});}
-});
-}
-function restoreTrigger(){
-var trigger=lastTrigger;
-lastTrigger=null;
-if(!trigger||!trigger.isConnected){return;}
-window.setTimeout(function(){trigger.focus({preventScroll:true});},0);
-}
+var closing=false;
 function syncModal(){
 var next=modalFromHash();
 if(next===activeModal){return;}
+closing=false;
+var previous=activeModal;
+var trigger=lastTrigger;
+var focused=document.activeElement;
+if(previous){previous.classList.remove("is-open");}
 restoreBackground();
-if(next&&!lastTrigger){lastTrigger=findTrigger(next);}
 activeModal=next;
+lastTrigger=findTrigger(next);
 setExpanded(activeModal);
-if(activeModal){setBackgroundInert(activeModal);focusPanel(activeModal);}else{restoreTrigger();}
+document.body.toggleAttribute("data-home-dialog-open",!!activeModal);
+if(activeModal){
+activeModal.classList.add("is-open");
+setBackgroundInert(activeModal);
+var panel=panelFor(activeModal);
+if(panel){panel.focus({preventScroll:true});}
+}else if(trigger&&trigger.isConnected&&(focused===document.body||previous.contains(focused))){
+trigger.focus({preventScroll:true});
+}
 }
 function closeActiveModal(){
-if(!activeModal){return;}
-window.location.hash="";
+if(!activeModal||closing){return;}
+if(window.history.state&&window.history.state.superflareHomeDialog===activeModal.id){
+closing=true;
+window.history.back();
+return;
+}
+var pageURL=new URL(window.location.href);
+pageURL.hash="";
+window.history.replaceState(window.history.state,"",pageURL.href);
+syncModal();
 }
 function focusableElements(modal){
 var panel=panelFor(modal);
 if(!panel){return [];}
-return Array.prototype.slice.call(panel.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).filter(function(node){
+return Array.prototype.slice.call(panel.querySelectorAll('a[href],summary,button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).filter(function(node){
 return node.getClientRects().length>0&&!node.hasAttribute("disabled");
 });
 }
 document.addEventListener("click",function(event){
 var origin=event.target;
-if(!origin||!origin.closest){return;}
+if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||!origin||!origin.closest){return;}
 var closeControl=origin.closest(closeSelector);
 if(closeControl&&activeModal&&activeModal.contains(closeControl)){event.preventDefault();closeActiveModal();return;}
 var trigger=origin.closest(triggerSelector);
-if(trigger){lastTrigger=trigger;}
+if(!trigger){return;}
+var modal=document.getElementById(trigger.getAttribute("aria-controls"));
+if(!modal||!modal.matches(modalSelector)||modal===activeModal){return;}
+event.preventDefault();
+window.history.pushState({superflareHomeDialog:modal.id},"","#"+modal.id);
+syncModal();
 });
 document.addEventListener("keydown",function(event){
-if(!activeModal){return;}
+if(!activeModal||event.defaultPrevented||event.isComposing){return;}
 if(event.key==="Escape"){event.preventDefault();closeActiveModal();return;}
 if(event.key!=="Tab"){return;}
 var panel=panelFor(activeModal);
@@ -195,6 +210,8 @@ if(event.shiftKey){
 if(focused===first||focused===panel||!activeModal.contains(focused)){event.preventDefault();last.focus();}
 }else if(focused===last||!activeModal.contains(focused)){event.preventDefault();first.focus();}
 });
+document.body.setAttribute("data-home-dialog-ready","");
+window.addEventListener("popstate",syncModal);
 window.addEventListener("hashchange",syncModal);
 syncModal();
 }());`
@@ -511,10 +528,7 @@ func renderHelp(c *echo.Context) error {
 	options, renderWarnings := statuspage.PrepareHomeOptionsForRender(options)
 	now := time.Now()
 	locale := options.Locale
-	assets, err := resolveHomeAssets(options)
-	if err != nil {
-		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
-	}
+	assets, renderWarnings := resolveHomeAssetsForRender(options, renderWarnings)
 	pageStyle, styleWarning, err := pageAppearance(options, assets)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
@@ -522,7 +536,8 @@ func renderHelp(c *echo.Context) error {
 	if styleWarning != "" {
 		renderWarnings = append(renderWarnings, styleWarning)
 	}
-	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || hasCustomScripts(options))
+	hasDialog := homeDialogsEnabled(options, renderWarnings, false)
+	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || hasCustomScripts(options) || hasDialog)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
@@ -546,8 +561,9 @@ func renderHelp(c *echo.Context) error {
 	m["AppsTitle"] = resolveAppsTitle(options, locale)
 	m["BookmarksTitle"] = resolveBookmarksTitle(options, locale)
 	m["Applications"] = GenerateHelpTemplate(locale)
-	m["SearchKeyword"] = template.HTML(buildSearchPlaceholder(options, locale))
+	m["SearchKeyword"] = buildSearchPlaceholder(options, locale)
 	m["SearchHintLabel"] = buildSearchHintLabel(options, locale)
+	m["SearchMaxLength"] = searchQueryMaxRunes
 	m["SearchFormTarget"] = buildSearchFormTarget(options)
 	m["SearchFormRel"] = buildSearchFormRel(options)
 	m["HasKeyword"] = false
@@ -572,6 +588,7 @@ func renderHelp(c *echo.Context) error {
 	m["CustomHomeStyle"] = customHomeStyle(options, assets)
 	m["RenderWarnings"] = renderWarnings
 	m["HasRenderWarnings"] = len(renderWarnings) > 0
+	m["InlineHomeDialogScript"] = inlineHomeDialogScript(hasDialog)
 	m["ScriptNonce"] = scriptNonce
 	m["CustomScripts"] = renderCustomScripts(options.CustomScripts, scriptNonce)
 	m["InlineClockScript"] = template.JS(_inlineClockScript)
@@ -582,6 +599,11 @@ func renderHelp(c *echo.Context) error {
 }
 
 func pageSearch(c *echo.Context) error {
+	form, err := readSearchForm(c)
+	if err != nil {
+		status := echo.StatusCode(err)
+		return statuspage.HTML(c, status, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), status, err.Error()))
+	}
 	if err := statuspage.BindCurrentOptions(c); err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
@@ -589,22 +611,14 @@ func pageSearch(c *echo.Context) error {
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	var body struct {
-		Search string `form:"search"`
-	}
-	if err := c.Bind(&body); err != nil {
-		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, "missing form data"))
-	}
-	search := strings.TrimSpace(body.Search)
-	if len(search) > 50 {
+	search := strings.TrimSpace(form.Get("search"))
+	if utf8.RuneCountInString(search) > searchQueryMaxRunes {
 		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, "search query too long"))
 	}
 	if shouldUseExternalSearch(options) && search != "" {
-		target, err := buildSearchEngineURL(options, search)
-		if err != nil {
-			return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
+		if target, err := buildSearchEngineURL(options, search); err == nil {
+			return c.Redirect(http.StatusFound, target)
 		}
-		return c.Redirect(http.StatusFound, target)
 	}
 	return render(c, search)
 }
@@ -657,10 +671,7 @@ func pageBookmark(c *echo.Context) error {
 	options, renderWarnings := statuspage.PrepareHomeOptionsForRender(options)
 	locale := options.Locale
 	requestURL := fn.ParseRequestURLTo(c.Request())
-	assets, err := resolveHomeAssets(options)
-	if err != nil {
-		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
-	}
+	assets, renderWarnings := resolveHomeAssetsForRender(options, renderWarnings)
 	pageStyle, styleWarning, err := pageAppearance(options, assets)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
@@ -675,7 +686,9 @@ func pageBookmark(c *echo.Context) error {
 	}
 	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, false, nil, options.ShowBookmarks, bookmarkModules.items, renderWarnings)
 	hasBookmarkDescriptions := options.ShowBookmarks && bookmarkModules.BookmarksHaveDescriptions
-	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || hasBookmarkDescriptions || hasCustomScripts(options))
+	hasNetworkLinks := hasLocalNetworkLinks(bookmarkModules.items)
+	hasDialog := homeDialogsEnabled(options, renderWarnings, false)
+	scriptNonce, err := maybeMakeScriptNonce(hasNetworkLinks || assets.Enabled || hasAsyncSiteIconRefresh(options) || hasBookmarkDescriptions || hasCustomScripts(options) || hasDialog)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
@@ -717,12 +730,14 @@ func pageBookmark(c *echo.Context) error {
 	m["CustomHomeStyle"] = customHomeStyle(options, assets)
 	m["RenderWarnings"] = renderWarnings
 	m["HasRenderWarnings"] = len(renderWarnings) > 0
+	m["InlineHomeDialogScript"] = inlineHomeDialogScript(hasDialog)
 	m["ScriptNonce"] = scriptNonce
 	m["CustomScripts"] = renderCustomScripts(options.CustomScripts, scriptNonce)
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	m["InlineBookmarkTooltipScript"] = inlineBookmarkTooltipScript(hasBookmarkDescriptions)
 	bindSEOData(m, options, c.Request(), seo.PageBookmarks, bookmarkModules.items, false)
+	bindLocalNetwork(m, options, c.Request(), hasNetworkLinks)
 	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
@@ -736,10 +751,7 @@ func pageApplication(c *echo.Context) error {
 	options, renderWarnings := statuspage.PrepareHomeOptionsForRender(options)
 	locale := options.Locale
 	requestURL := fn.ParseRequestURLTo(c.Request())
-	assets, err := resolveHomeAssets(options)
-	if err != nil {
-		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
-	}
+	assets, renderWarnings := resolveHomeAssetsForRender(options, renderWarnings)
 	pageStyle, styleWarning, err := pageAppearance(options, assets)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
@@ -756,7 +768,9 @@ func pageApplication(c *echo.Context) error {
 		}
 	}
 	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, options.ShowApps, applications.items, false, nil, renderWarnings)
-	scriptNonce, err := maybeMakeScriptNonce(assets.Enabled || hasAsyncSiteIconRefresh(options) || (options.ShowApps && applications.HasDirectories) || hasCustomScripts(options))
+	hasNetworkLinks := hasLocalNetworkLinks(applications.items)
+	hasDialog := homeDialogsEnabled(options, renderWarnings, applications.HasDirectories)
+	scriptNonce, err := maybeMakeScriptNonce(hasNetworkLinks || assets.Enabled || hasAsyncSiteIconRefresh(options) || hasDialog || hasCustomScripts(options))
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
@@ -775,7 +789,7 @@ func pageApplication(c *echo.Context) error {
 	m["Applications"] = applications.HTML
 	m["ApplicationSubdirectoryModals"] = applications.Modals
 	m["HasApplicationSubdirectories"] = applications.HasDirectories
-	m["InlineApplicationSubdirectoryModalScript"] = inlineApplicationSubdirectoryModalScript(applications.HasDirectories)
+	m["InlineHomeDialogScript"] = inlineHomeDialogScript(hasDialog)
 	m["PageName"] = i18n.T(locale, "page_apps")
 	m["SubPage"] = true
 	m["PageAppearance"] = pageStyle
@@ -799,6 +813,7 @@ func pageApplication(c *echo.Context) error {
 	m["InlineBackgroundLoaderScript"] = template.JS(_inlineBackgroundLoaderScript)
 	m["InlineSiteIconRefreshScript"] = inlineSiteIconRefreshScript(options)
 	bindSEOData(m, options, c.Request(), seo.PageApplications, applications.items, false)
+	bindLocalNetwork(m, options, c.Request(), hasNetworkLinks)
 	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
@@ -810,20 +825,17 @@ func render(c *echo.Context, filter string) error {
 	}
 	statuspage.BindOptions(c, options)
 	options, renderWarnings := statuspage.PrepareHomeOptionsForRender(options)
+	if shouldUseExternalSearch(options) {
+		if _, err := buildSearchEngineURL(options, "example"); err != nil {
+			options.SearchMode = "bookmarks"
+			renderWarnings = append(renderWarnings, i18n.T(options.Locale, "search_engine_custom_template_fallback"))
+		}
+	}
 	requestURL := fn.ParseRequestURLTo(c.Request())
 	locale := options.Locale
-	hasKeyword := false
-	searchKeyword := buildSearchPlaceholder(options, locale)
-	searchHintLabel := buildSearchHintLabel(options, locale)
-	if filter != "" {
-		searchKeyword = i18n.Tf(locale, "search_result", filter)
-		hasKeyword = true
-	}
+	hasKeyword := filter != ""
 	now := time.Now()
-	assets, err := resolveHomeAssets(options)
-	if err != nil {
-		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
-	}
+	assets, renderWarnings := resolveHomeAssetsForRender(options, renderWarnings)
 	pageStyle, styleWarning, err := pageAppearance(options, assets)
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
@@ -844,14 +856,16 @@ func render(c *echo.Context, filter string) error {
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
-	bookmarkWarningItems := bookmarkModules.items
+	visibleBookmarkItems := bookmarkModules.items
 	showBookmarkWarnings := options.ShowBookmarks
 	if !showBookmarkWarnings && options.ShowFavorites {
-		bookmarkWarningItems = bookmarkModules.favoriteItems
+		visibleBookmarkItems = bookmarkModules.favoriteItems
 		showBookmarkWarnings = bookmarkModules.HasFavorites
 	}
-	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, options.ShowApps, applications.items, showBookmarkWarnings, bookmarkWarningItems, renderWarnings)
-	scriptNonce, err := maybeMakeScriptNonce(options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || bookmarkModules.HasDescriptions || (options.ShowApps && applications.HasDirectories) || hasCustomScripts(options))
+	renderWarnings = appendConfiguredIconWarningsForItems(locale, options.IconMode, options.ShowApps, applications.items, showBookmarkWarnings, visibleBookmarkItems, renderWarnings)
+	hasNetworkLinks := hasLocalNetworkLinks(applications.items, visibleBookmarkItems)
+	hasDialog := homeDialogsEnabled(options, renderWarnings, applications.HasDirectories)
+	scriptNonce, err := maybeMakeScriptNonce(hasNetworkLinks || options.ShowDateTime || assets.Enabled || hasAsyncSiteIconRefresh(options) || bookmarkModules.HasDescriptions || hasDialog || hasCustomScripts(options))
 	if err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(locale, http.StatusInternalServerError, err.Error()))
 	}
@@ -878,15 +892,21 @@ func render(c *echo.Context, filter string) error {
 	m["Applications"] = applications.HTML
 	m["ApplicationSubdirectoryModals"] = applications.Modals
 	m["HasApplicationSubdirectories"] = applications.HasDirectories
-	m["InlineApplicationSubdirectoryModalScript"] = inlineApplicationSubdirectoryModalScript(applications.HasDirectories)
+	m["InlineHomeDialogScript"] = inlineHomeDialogScript(hasDialog)
 	m["Bookmarks"] = bookmarkModules.Bookmarks
 	m["Favorites"] = bookmarkModules.Favorites
 	m["HasFavorites"] = bookmarkModules.HasFavorites
 	m["BookmarksHaveDescriptions"] = bookmarkModules.BookmarksHaveDescriptions
 	m["FavoritesHaveDescriptions"] = bookmarkModules.FavoritesHaveDescriptions
 	m["HasBookmarkDescriptions"] = bookmarkModules.HasDescriptions
-	m["SearchKeyword"] = template.HTML(searchKeyword)
-	m["SearchHintLabel"] = searchHintLabel
+	m["SearchKeyword"] = buildSearchPlaceholder(options, locale)
+	m["SearchHintLabel"] = buildSearchHintLabel(options, locale)
+	m["SearchValue"] = filter
+	if hasKeyword {
+		m["SearchResultLabel"] = i18n.Tf(locale, "search_result", filter)
+		m["SearchNoResults"] = len(applications.items) == 0 && len(visibleBookmarkItems) == 0
+	}
+	m["SearchMaxLength"] = searchQueryMaxRunes
 	m["SearchFormTarget"] = buildSearchFormTarget(options)
 	m["SearchFormRel"] = buildSearchFormRel(options)
 	m["HasKeyword"] = hasKeyword
@@ -899,9 +919,9 @@ func render(c *echo.Context, filter string) error {
 	m["OptionOpenBookmarkNewTab"] = options.OpenBookmarkNewTab
 	m["OptionShowTitle"] = options.ShowTitle
 	m["OptionShowDateTime"] = options.ShowDateTime
-	m["OptionShowApps"] = options.ShowApps
+	m["OptionShowApps"] = options.ShowApps && (!hasKeyword || len(applications.items) > 0)
 	m["OptionShowFavorites"] = options.ShowFavorites && bookmarkModules.HasFavorites
-	m["OptionShowBookmarks"] = options.ShowBookmarks
+	m["OptionShowBookmarks"] = options.ShowBookmarks && (!hasKeyword || len(bookmarkModules.items) > 0)
 	m["OptionHideSettingsButton"] = options.HideSettingsButton
 	m["OptionHideHelpButton"] = options.HideHelpButton
 	m["OptionHideWarningsButton"] = options.HideWarningsButton
@@ -920,7 +940,8 @@ func render(c *echo.Context, filter string) error {
 	m["InlineBookmarkTooltipScript"] = inlineBookmarkTooltipScript(bookmarkModules.HasDescriptions)
 	// A search result page is a thin duplicate of the home page: keep it out of
 	// the index so crawlers do not treat ?q-style permutations as content.
-	bindSEOData(m, options, c.Request(), seo.PageHome, homeSEOItems(applications.items, bookmarkModules.items), hasKeyword)
+	bindSEOData(m, options, c.Request(), seo.PageHome, homeSEOItems(applications.items, visibleBookmarkItems), hasKeyword)
+	bindLocalNetwork(m, options, c.Request(), hasNetworkLinks)
 	return templates.Render(c, http.StatusOK, "home.html", m)
 }
 
@@ -1006,12 +1027,7 @@ func searchEngineDisplayName(options model.Application, locale string) string {
 }
 
 func buildSearchEngineURL(options model.Application, keyword string) (string, error) {
-	escaped := url.QueryEscape(keyword)
-	templateValue := searchEngineTemplate(options)
-	if !strings.Contains(templateValue, "%s") {
-		return "", fmt.Errorf("custom search engine template must contain %%s placeholder")
-	}
-	return strings.ReplaceAll(templateValue, "%s", escaped), nil
+	return validation.BuildSearchURL(searchEngineTemplate(options), keyword)
 }
 
 func searchEngineTemplate(options model.Application) string {
@@ -1123,11 +1139,15 @@ func inlineBookmarkTooltipScript(enabled bool) template.JS {
 	return template.JS(_inlineBookmarkTooltipScript)
 }
 
-func inlineApplicationSubdirectoryModalScript(enabled bool) template.JS {
+func homeDialogsEnabled(options model.Application, warnings []string, hasDirectories bool) bool {
+	return hasDirectories || (!options.HideWarningsButton && len(warnings) > 0)
+}
+
+func inlineHomeDialogScript(enabled bool) template.JS {
 	if !enabled {
 		return ""
 	}
-	return template.JS(_inlineApplicationSubdirectoryModalScript)
+	return template.JS(_inlineHomeDialogScript)
 }
 
 func hasAsyncSiteIconRefresh(options model.Application) bool {

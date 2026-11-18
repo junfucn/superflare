@@ -18,6 +18,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/internal/background"
 )
 
@@ -380,8 +381,8 @@ func TestUpdateThemesPreservesExistingRemoteBackgroundWhenFieldOmitted(t *testin
 	if err := updateThemes(c); err != nil {
 		t.Fatalf("updateThemes: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, "config.yml"))
@@ -450,8 +451,8 @@ func TestUpdateThemesClearsExistingRemoteBackgroundWhenFieldExplicitlyBlank(t *t
 	if err := updateThemes(c); err != nil {
 		t.Fatalf("updateThemes: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, "config.yml"))
@@ -514,8 +515,8 @@ func TestUpdateThemesClearsCustomThemeFieldsWhenSubmittingBlankCustomColors(t *t
 	if err := updateThemes(c); err != nil {
 		t.Fatalf("updateThemes: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, "config.yml"))
@@ -534,6 +535,89 @@ func TestUpdateThemesClearsCustomThemeFieldsWhenSubmittingBlankCustomColors(t *t
 	}
 	if strings.Contains(content, "CustomThemeAccent: rgba(110, 255, 204, 1)") {
 		t.Fatalf("expected custom accent to be cleared, got %s", content)
+	}
+}
+
+func TestUpdateThemesValidatesUploadedBackgroundBeforeSaving(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		existing, upload bool
+		field            *string
+		status           int
+	}{
+		{name: "missing reference", field: new(background.UploadedFullPath), status: http.StatusBadRequest},
+		{name: "missing retained background", status: http.StatusBadRequest},
+		{name: "existing upload", existing: true, field: new(background.UploadedFullPath), status: http.StatusSeeOther},
+		{name: "replacement upload", upload: true, status: http.StatusSeeOther},
+		{name: "clear missing background", field: new(""), status: http.StatusSeeOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			config := "Title: SuperFlare\nLocale: en\nTheme: blackboard\nBackgroundImage: " + background.UploadedFullPath + "\nBackgroundImageMode: upload\n"
+			if err := os.WriteFile("config.yml", []byte(config), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.existing {
+				if _, err := background.PrepareUploadedBackground("wallpaper.png", bytes.NewReader(testPNGBytes(t))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			fields := map[string]string{"action": "custom-theme", "theme": "custom", "background-opacity": "100"}
+			if tc.field != nil {
+				fields["background-image"] = *tc.field
+			}
+			for key, value := range fields {
+				if err := writer.WriteField(key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.upload {
+				part, err := writer.CreateFormFile("background-file", "wallpaper.png")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := part.Write(testPNGBytes(t)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/settings/theme", &body)
+			req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+			rec := httptest.NewRecorder()
+			e := echo.New()
+			e.Renderer = themeTestRenderer{}
+			if err := updateThemes(e.NewContext(req, rec)); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != tc.status {
+				t.Fatalf("expected %d, got %d: %s", tc.status, rec.Code, rec.Body.String())
+			}
+			if tc.status == http.StatusBadRequest {
+				raw, err := os.ReadFile("config.yml")
+				if err != nil || string(raw) != config {
+					t.Fatalf("rejected save changed the config: %q, %v", raw, err)
+				}
+				if !strings.Contains(rec.Body.String(), "uploaded background is unavailable") {
+					t.Fatalf("missing recovery guidance: %s", rec.Body.String())
+				}
+				return
+			}
+			options, err := data.GetAllSettingsOptions()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.field != nil && *tc.field == "" {
+				if options.BackgroundImage != "" {
+					t.Fatalf("background not cleared: %q", options.BackgroundImage)
+				}
+			} else if !background.UsesUploadedBackground(options) || background.CheckUploadedBackground() != nil {
+				t.Fatal("saved background must be available")
+			}
+		})
 	}
 }
 

@@ -1,5 +1,7 @@
 @echo off
 setlocal DisableDelayedExpansion
+rem Let Windows PowerShell use its own module paths when launched from PowerShell 7.
+set "PSModulePath="
 choice /C YN /N /M "Increment patch version before building? (Y/N): "
 if "%ERRORLEVEL%"=="1" goto bump
 if "%ERRORLEVEL%"=="2" goto build

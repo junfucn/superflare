@@ -1,13 +1,17 @@
 package search
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 
 	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
+	"github.com/junfuchang/superflare/config/validation"
 	"github.com/junfuchang/superflare/internal/auth"
+	"github.com/junfuchang/superflare/internal/footer"
 	"github.com/junfuchang/superflare/internal/pool"
 	settingsroot "github.com/junfuchang/superflare/internal/settings"
 	"github.com/junfuchang/superflare/internal/statuspage"
@@ -18,25 +22,34 @@ func RegisterRouting(e *echo.Echo) {
 	e.POST(define.SettingPages.Search.Path, updateSearchOptions, auth.AuthRequired)
 }
 
+type searchForm struct {
+	ShowSearchComponent        bool   `form:"show-search-component"`
+	DisabledSearchAutoFocus    bool   `form:"disabled-search-auto-focus"`
+	SearchMode                 string `form:"search-mode"`
+	SearchEngine               string `form:"search-engine"`
+	SearchEngineOpenMode       string `form:"search-engine-open-mode"`
+	SearchEngineCustomTemplate string `form:"search-engine-custom-template"`
+}
+
 func updateSearchOptions(c *echo.Context) error {
-	var body struct {
-		ShowSearchComponent        bool   `form:"show-search-component"`
-		DisabledSearchAutoFocus    bool   `form:"disabled-search-auto-focus"`
-		SearchMode                 string `form:"search-mode"`
-		SearchEngine               string `form:"search-engine"`
-		SearchEngineOpenMode       string `form:"search-engine-open-mode"`
-		SearchEngineCustomTemplate string `form:"search-engine-custom-template"`
-	}
+	var body searchForm
 	if err := c.Bind(&body); err != nil {
 		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, "missing form data"))
 	}
 	if err := data.UpdateSearch(body.ShowSearchComponent, body.DisabledSearchAutoFocus, body.SearchMode, body.SearchEngine, body.SearchEngineOpenMode, body.SearchEngineCustomTemplate); err != nil {
+		if errors.Is(err, validation.ErrInvalidSearchTemplate) {
+			return renderSearchSettings(c, http.StatusBadRequest, &body)
+		}
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	return pageSearch(c)
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.Search.Path)
 }
 
 func pageSearch(c *echo.Context) error {
+	return renderSearchSettings(c, http.StatusOK, nil)
+}
+
+func renderSearchSettings(c *echo.Context, code int, submitted *searchForm) error {
 	options, err := data.GetAllSettingsOptions()
 	if err != nil {
 		statuspage.BindOptionsLoadError(c, err)
@@ -44,6 +57,20 @@ func pageSearch(c *echo.Context) error {
 	}
 	statuspage.BindOptions(c, options)
 	options, renderWarnings := statuspage.PrepareSettingsOptionsForRender(options)
+	if submitted != nil {
+		options.ShowSearchComponent = submitted.ShowSearchComponent
+		options.DisabledSearchAutoFocus = submitted.DisabledSearchAutoFocus
+		options.SearchMode = submitted.SearchMode
+		options.SearchEngine = submitted.SearchEngine
+		options.SearchEngineOpenMode = submitted.SearchEngineOpenMode
+		options.SearchEngineCustomTemplate = submitted.SearchEngineCustomTemplate
+	}
+	templateInvalid := false
+	if strings.EqualFold(strings.TrimSpace(options.SearchMode), "engine") &&
+		strings.EqualFold(strings.TrimSpace(options.SearchEngine), "custom") {
+		_, err := validation.BuildSearchURL(options.SearchEngineCustomTemplate, "example")
+		templateInvalid = err != nil
+	}
 	locale := options.Locale
 	showLoginInfo := false
 	userName := ""
@@ -85,8 +112,10 @@ func pageSearch(c *echo.Context) error {
 	m["SearchEngine"] = options.SearchEngine
 	m["SearchEngineOpenMode"] = options.SearchEngineOpenMode
 	m["SearchEngineCustomTemplate"] = options.SearchEngineCustomTemplate
+	m["SearchEngineCustomTemplateInvalid"] = templateInvalid
 	m["OptionTitle"] = options.Title
 	m["OptionSiteIcon"] = options.SiteIcon
 	m["RenderWarnings"] = renderWarnings
-	return c.Render(http.StatusOK, "settings.html", m)
+	footer.BindTemplateData(m, options.Footer)
+	return settingsroot.Render(c, code, m)
 }

@@ -29,7 +29,7 @@ func updateScripts(c *echo.Context) error {
 	if err := data.UpdateCustomScripts(body.CustomScripts); err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	return pageScripts(c)
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.Scripts.Path)
 }
 
 func pageScripts(c *echo.Context) error {
@@ -75,5 +75,5 @@ func pageScripts(c *echo.Context) error {
 	m["OptionCustomScripts"] = options.CustomScripts
 	m["RenderWarnings"] = renderWarnings
 	footer.BindTemplateData(m, options.Footer)
-	return c.Render(http.StatusOK, "settings.html", m)
+	return settingsroot.Render(c, http.StatusOK, m)
 }

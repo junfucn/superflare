@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -128,10 +129,8 @@ func TestSaveFilesAtomicallyRollsBackWhenLaterReplaceFails(t *testing.T) {
 	originalRename := osRename
 	defer func() { osRename = originalRename }()
 
-	renameCalls := 0
 	osRename = func(oldPath string, newPath string) error {
-		renameCalls++
-		if renameCalls == 4 {
+		if newPath == secondPath && strings.Contains(filepath.Base(oldPath), ".tmp-") {
 			return errors.New("forced rename failure")
 		}
 		return originalRename(oldPath, newPath)
@@ -159,6 +158,66 @@ func TestSaveFilesAtomicallyRollsBackWhenLaterReplaceFails(t *testing.T) {
 	}
 	if string(secondRaw) != "old-second" {
 		t.Fatalf("expected second file rollback, got %q", string(secondRaw))
+	}
+}
+
+func TestSaveFilesKeepsLiveConfigReadableThroughReplacementAndRollback(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureAppConfigExists(); err != nil {
+		t.Fatal(err)
+	}
+	config := getConfigPath("config")
+	other := filepath.Join(filepath.Dir(config), "z-last.yml")
+	original, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	originalRename := osRename
+	t.Cleanup(func() { osRename = originalRename })
+	replacements, rollbacks := 0, 0
+	osRename = func(oldPath, newPath string) error {
+		for _, path := range []string{config, other} {
+			if _, err := os.ReadFile(path); err != nil {
+				t.Fatalf("live file disappeared before replacement: %v", err)
+			}
+		}
+		if _, err := GetAllSettingsOptions(); err != nil {
+			t.Fatalf("config reader failed during save: %v", err)
+		}
+		if strings.Contains(filepath.Base(oldPath), ".backup-") {
+			rollbacks++
+		} else {
+			replacements++
+			if newPath == other {
+				return errors.New("forced second replacement failure")
+			}
+		}
+		if err := originalRename(oldPath, newPath); err != nil {
+			return err
+		}
+		if _, err := os.ReadFile(config); err != nil {
+			t.Fatalf("live config disappeared after replacement: %v", err)
+		}
+		return nil
+	}
+	if err := saveFilesAtomically(map[string][]byte{config: []byte("Title: Updated\nTheme: blackboard\n"), other: []byte("new")}); err == nil {
+		t.Fatal("expected replacement failure")
+	}
+	if replacements != 2 || rollbacks != 1 {
+		t.Fatalf("unexpected commit/rollback operations: %d/%d", replacements, rollbacks)
+	}
+	after, err := os.ReadFile(config)
+	if err != nil || !bytes.Equal(after, original) {
+		t.Fatalf("rollback lost original config: %v", err)
+	}
+	for _, pattern := range []string{".*.tmp-*", ".*.backup-*"} {
+		matches, err := filepath.Glob(pattern)
+		if err != nil || len(matches) != 0 {
+			t.Fatalf("leftover files %v, err=%v", matches, err)
+		}
 	}
 }
 

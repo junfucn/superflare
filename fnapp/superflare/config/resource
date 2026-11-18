@@ -1,1 +1,7 @@
-{}
+{
+  "data-share": {
+    "shares": [
+      { "name": "superflare" }
+    ]
+  }
+}

@@ -81,14 +81,21 @@
       align-items: center;
       justify-content: center;
       padding: 16px;
+      visibility: hidden;
       opacity: 0;
       pointer-events: none;
       transition: opacity .18s ease;
       text-decoration: none;
     }
-    .page-warnings-modal:target {
+    .page-warnings-modal.is-open,
+    body:not([data-home-dialog-ready]) .page-warnings-modal:target {
+      visibility: visible;
       opacity: 1;
       pointer-events: auto;
+    }
+    body[data-home-dialog-open],
+    body:not([data-home-dialog-ready]):has(.page-warnings-modal:target) {
+      overflow: hidden;
     }
     .page-warnings-backdrop {
       position: absolute;
@@ -97,9 +104,11 @@
     }
     .page-warnings-panel {
       position: relative;
-      width: min(640px, calc(100vw - 28px));
+      width: min(640px, 100%);
       max-height: min(80vh, 720px);
       overflow: auto;
+      overscroll-behavior: contain;
+      overflow-wrap: anywhere;
       padding: 18px 18px 16px;
       border-radius: 8px;
       background: color-mix(in srgb, var(--color-background) 88%, rgba(0, 0, 0, .12));
@@ -120,6 +129,7 @@
     }
     .page-warnings-close {
       display: inline-flex;
+      flex: none;
       align-items: center;
       justify-content: center;
       width: 34px;
@@ -164,15 +174,11 @@
       {{ if .ShowSearchComponent }}
       <div class="module-container" id="search-container">
         <form action="/" method="POST" role="search"{{ if .SearchFormTarget }} target="{{.SearchFormTarget}}"{{ end }}{{ if .SearchFormRel }} rel="{{.SearchFormRel}}"{{ end }}>
-          {{ if .DisabledSearchAutoFocus }}
-          <input type="text" name="search" id="search" autocomplete="off" placeholder="{{.SearchKeyword}}"/>
-          {{ else }}
-          <input type="text" name="search" id="search" autocomplete="off" autofocus placeholder="{{.SearchKeyword}}"/>
-          {{ end}}
-          {{ if .HasKeyword }}
-          <a href="/">{{ T .Locale "search_tip_back" }}</a>
-          {{ end }}
-          <label for="search" id="search-label">{{.SearchHintLabel}}</label>
+          <label for="search" class="sr-only">{{.SearchHintLabel}}</label>
+          <div class="search-field">
+            <input type="search" name="search" id="search" autocomplete="off" enterkeyhint="search"{{ if not .DisabledSearchAutoFocus }} autofocus{{ end }} pattern="\s*[\s\S]{0,{{.SearchMaxLength}}}\s*" title="{{ if eq .Locale "en" }}Up to {{.SearchMaxLength}} characters{{ else }}最多 {{.SearchMaxLength}} 个字符{{ end }}" placeholder="{{.SearchKeyword}}" value="{{.SearchValue}}"/>
+            <button type="submit">{{ T .Locale "search_placeholder" }}</button>
+          </div>
         </form>
       </div>
       {{ end }}
@@ -194,6 +200,14 @@
       <div class="sub-page-header">
         <h1>{{.PageName}}</h1>
         <p><a href="/">{{ T .Locale "back" }}</a></p>
+      </div>
+      {{ end }}
+
+      {{ if .HasKeyword }}
+      <div class="search-results-header">
+        <h2>{{.SearchResultLabel}}</h2>
+        <a href="/">{{ T .Locale "search_tip_back" }}</a>
+        {{ if .SearchNoResults }}<p>{{ T .Locale "search_no_results" }}</p>{{ end }}
       </div>
       {{ end }}
 
@@ -223,7 +237,7 @@
       <div class="toolbar-container">
         {{ if and .HasRenderWarnings (not .OptionHideWarningsButton) }}
         <div class="toolbar-btn-bg toolbar-btn-warning">
-          <a href="#page-warnings-modal" id="btn-open-warnings" class="toolbar-btn-link" aria-label="{{ T .Locale "toolbar_warnings" }}">
+          <a href="#page-warnings-modal" id="btn-open-warnings" class="toolbar-btn-link" aria-label="{{ T .Locale "toolbar_warnings" }}" aria-haspopup="dialog" aria-expanded="false" aria-controls="page-warnings-modal">
             <svg viewBox="0 0 24 24" width="24">
               <path
                 d="M13,14H11V9H13M13,18H11V16H13M1,21H23L12,2L1,21Z"
@@ -273,11 +287,11 @@
   {{ end }}
   {{ if and .HasRenderWarnings (not .OptionHideWarningsButton) }}
   <div id="page-warnings-modal" class="page-warnings-modal">
-    <a href="#" class="page-warnings-backdrop" aria-label="Close"></a>
-    <div class="page-warnings-panel">
+    <a href="#" class="page-warnings-backdrop" tabindex="-1" aria-hidden="true"></a>
+    <div class="page-warnings-panel" role="dialog" aria-modal="true" aria-labelledby="page-warnings-title" tabindex="-1">
       <div class="page-warnings-header">
-        <h2>{{ T .Locale "warnings_title" }}</h2>
-        <a href="#" class="page-warnings-close" aria-label="Close">&times;</a>
+        <h2 id="page-warnings-title">{{ T .Locale "warnings_title" }}</h2>
+        <a href="#" class="page-warnings-close" aria-label="{{ T .Locale "close" }}">&times;</a>
       </div>
       {{ if .RenderWarnings }}
       <div class="page-warnings-list">
@@ -291,6 +305,9 @@
     </div>
   </div>
   {{ end }}
+  {{ if .HasLocalNetworkLinks }}
+  <script nonce="{{.ScriptNonce}}">{{.LocalNetworkScript}}</script>
+  {{ end }}
   {{ if .OptionShowDateTime }}
   <script nonce="{{.ScriptNonce}}">{{.InlineClockScript}}</script>
   {{ end }}
@@ -303,8 +320,8 @@
   {{ if .InlineBookmarkTooltipScript }}
   <script nonce="{{.ScriptNonce}}">{{.InlineBookmarkTooltipScript}}</script>
   {{ end }}
-  {{ if and .OptionShowApps .InlineApplicationSubdirectoryModalScript }}
-  <script nonce="{{.ScriptNonce}}">{{.InlineApplicationSubdirectoryModalScript}}</script>
+  {{ if .InlineHomeDialogScript }}
+  <script nonce="{{.ScriptNonce}}">{{.InlineHomeDialogScript}}</script>
   {{ end }}
 </body>
 </html>

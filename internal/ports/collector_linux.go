@@ -22,6 +22,7 @@ type procSocket struct {
 }
 
 const envPortProcRoot = "FLARE_PORT_PROC_ROOT"
+const defaultProcRoot = "/proc"
 
 const portCommandTimeout = 2 * time.Second
 
@@ -37,8 +38,23 @@ func collectRuntimePorts() []runtimePort {
 
 func collectRuntimePortsResult() runtimeCollectorResult {
 	procRoot := getProcRoot()
-	sockets, procErr := collectProcSockets(procRoot)
+	return collectRuntimePortsFromProc(procRoot, procRoot != defaultProcRoot)
+}
+
+func collectRuntimePortsFromProc(procRoot string, hostProc bool) runtimeCollectorResult {
+	netDir := filepath.Join(procRoot, "net")
+	if hostProc {
+		// The mount's top-level net link resolves to the caller's network namespace.
+		netDir = filepath.Join(procRoot, "1", "net")
+		if _, err := os.Stat(netDir); err != nil {
+			return runtimeCollectorResult{Err: fmt.Errorf("read host network data in %s failed: %w", netDir, err)}
+		}
+	}
+	sockets, procErr := collectProcSockets(netDir)
 	if procErr != nil {
+		if hostProc {
+			return runtimeCollectorResult{Err: procErr}
+		}
 		items, err := collectCommandRuntimePortsErr()
 		if err == nil {
 			return runtimeCollectorResult{Ports: items}
@@ -46,6 +62,9 @@ func collectRuntimePortsResult() runtimeCollectorResult {
 		return runtimeCollectorResult{Err: errors.Join(procErr, err)}
 	}
 	if len(sockets) == 0 {
+		if hostProc {
+			return runtimeCollectorResult{}
+		}
 		items, err := collectCommandRuntimePortsErr()
 		return runtimeCollectorResult{Ports: items, Err: err}
 	}
@@ -65,7 +84,7 @@ func collectRuntimePortsResult() runtimeCollectorResult {
 			ServiceName: owner.name,
 		})
 	}
-	if needsFallback {
+	if needsFallback && !hostProc {
 		fallback, err := collectCommandRuntimePortsErr()
 		if err == nil {
 			fillMissingRuntimePortOwners(items, fallback)
@@ -84,12 +103,12 @@ func collectRuntimePortsResult() runtimeCollectorResult {
 func getProcRoot() string {
 	procRoot := strings.TrimSpace(os.Getenv(envPortProcRoot))
 	if procRoot == "" {
-		return "/proc"
+		return defaultProcRoot
 	}
 	return filepath.Clean(procRoot)
 }
 
-func collectProcSockets(procRoot string) ([]procSocket, error) {
+func collectProcSockets(netDir string) ([]procSocket, error) {
 	var result []procSocket
 	for _, source := range []struct {
 		name       string
@@ -101,7 +120,7 @@ func collectProcSockets(procRoot string) ([]procSocket, error) {
 		{"udp", "udp", false},
 		{"udp6", "udp", false},
 	} {
-		items, err := parseProcNet(filepath.Join(procRoot, "net", source.name), source.protocol, source.listenOnly)
+		items, err := parseProcNet(filepath.Join(netDir, source.name), source.protocol, source.listenOnly)
 		if err != nil {
 			return result, err
 		}

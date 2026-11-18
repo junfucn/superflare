@@ -36,21 +36,24 @@ func collectRuntimePorts() []runtimePort {
 
 func collectRuntimePortsResult() runtimeCollectorResult {
 	processNames, processErr := collectWindowsProcessNamesErr()
-	tcp := collectWindowsPortsDetailed(`Get-NetTCPConnection -State Listen | Select-Object LocalPort,OwningProcess | Sort-Object LocalPort,OwningProcess -Unique | ConvertTo-Csv -NoTypeInformation`, "tcp", processNames)
-	udp := collectWindowsPortsDetailed(`Get-NetUDPEndpoint | Select-Object LocalPort,OwningProcess | Sort-Object LocalPort,OwningProcess -Unique | ConvertTo-Csv -NoTypeInformation`, "udp", processNames)
+	// Three bulk commands take at most 6s. Allow 1s of fallback work plus
+	// one in-flight 2s command, staying below the HTTP server's 10s timeout.
+	lookup := newWindowsProcessNameLookup(time.Second)
+	tcp := collectWindowsPortsWithLookup(`Get-NetTCPConnection -State Listen | Select-Object LocalPort,OwningProcess | Sort-Object LocalPort,OwningProcess -Unique | ConvertTo-Csv -NoTypeInformation`, "tcp", processNames, lookup)
+	udp := collectWindowsPortsWithLookup(`Get-NetUDPEndpoint | Select-Object LocalPort,OwningProcess | Sort-Object LocalPort,OwningProcess -Unique | ConvertTo-Csv -NoTypeInformation`, "udp", processNames, lookup)
+
+	if tcp.err != nil {
+		tcp.err = fmt.Errorf("collect TCP ports failed: %w", tcp.err)
+	}
+	if udp.err != nil {
+		udp.err = fmt.Errorf("collect UDP ports failed: %w", udp.err)
+	}
+	if err := errors.Join(tcp.err, udp.err); err != nil {
+		return runtimeCollectorResult{Err: err}
+	}
 
 	items := append(tcp.items, udp.items...)
 	var warnings []CollectionWarning
-	if len(items) == 0 {
-		switch {
-		case tcp.err != nil && udp.err != nil:
-			return runtimeCollectorResult{Err: errors.Join(tcp.err, udp.err)}
-		case tcp.err != nil:
-			return runtimeCollectorResult{Err: tcp.err}
-		case udp.err != nil:
-			return runtimeCollectorResult{Err: udp.err}
-		}
-	}
 	missingOwners := countRuntimePortsMissingOwnerInfo(items)
 	if missingOwners > 0 {
 		ownerErr := errors.Join(processErr, tcp.ownerErr, udp.ownerErr)
@@ -79,6 +82,22 @@ type windowsPortCollectResult struct {
 }
 
 func collectWindowsPortsDetailed(script string, protocol string, processNames map[int]string) windowsPortCollectResult {
+	return collectWindowsPortsWithLookup(script, protocol, processNames, newWindowsProcessNameLookup(time.Second))
+}
+
+func newWindowsProcessNameLookup(budget time.Duration) func(int) (string, error) {
+	return func(pid int) (string, error) {
+		if budget <= 0 {
+			return "", fmt.Errorf("process name lookup budget exhausted")
+		}
+		started := time.Now()
+		name, err := lookupWindowsProcessNameErr(pid)
+		budget -= time.Since(started)
+		return name, err
+	}
+}
+
+func collectWindowsPortsWithLookup(script string, protocol string, processNames map[int]string, lookup func(int) (string, error)) windowsPortCollectResult {
 	out, err := runPowerShell(script)
 	if err != nil {
 		return windowsPortCollectResult{err: err}
@@ -113,12 +132,12 @@ func collectWindowsPortsDetailed(script string, protocol string, processNames ma
 		}
 		validRows++
 		pid, _ := strconv.Atoi(strings.TrimSpace(record[1]))
-		name := processNames[pid]
-		if pid > 0 && name == "" {
+		name, known := processNames[pid]
+		if pid > 0 && !known {
 			var lookupErr error
-			name, lookupErr = lookupWindowsProcessNameErr(pid)
-			if lookupErr != nil {
-				ownerErr = errors.Join(ownerErr, fmt.Errorf("lookup process name for pid %d failed: %w", pid, lookupErr))
+			name, lookupErr = lookup(pid)
+			if lookupErr != nil && ownerErr == nil {
+				ownerErr = fmt.Errorf("lookup process name for pid %d failed: %w", pid, lookupErr)
 			}
 			processNames[pid] = name
 		}

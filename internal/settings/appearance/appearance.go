@@ -13,6 +13,7 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
 	"github.com/junfuchang/superflare/internal/footer"
+	"github.com/junfuchang/superflare/internal/localnetwork"
 	"github.com/junfuchang/superflare/internal/pool"
 	"github.com/junfuchang/superflare/internal/resources/mdi"
 	settingsroot "github.com/junfuchang/superflare/internal/settings"
@@ -26,33 +27,34 @@ func RegisterRouting(e *echo.Echo) {
 
 func updateAppearanceOptions(c *echo.Context) error {
 	var body struct {
-		OptionTitle              string `form:"title"`
-		OptionFooter             string `form:"footer"`
-		OptionSiteIcon           string `form:"site-icon"`
-		OptionOpenAppNewTab      bool   `form:"open-app-newtab"`
-		OptionOpenBookmarkNewTab bool   `form:"open-bookmark-newtab"`
-		OptionShowTitle          bool   `form:"show-title"`
-		OptionGreetings          string `form:"greetings"`
-		OptionShowDateTime       bool   `form:"show-datetime"`
-		OptionShowApps           bool   `form:"show-apps"`
-		OptionShowFavorites      bool   `form:"show-favorites"`
-		OptionShowBookmarks      bool   `form:"show-bookmarks"`
-		OptionAppsTitle          string `form:"apps-title"`
-		OptionFavoritesTitle     string `form:"favorites-title"`
-		OptionBookmarksTitle     string `form:"bookmarks-title"`
-		BookmarkCategoryColor    string `form:"bookmark-category-color"`
-		BookmarkItemColor        string `form:"bookmark-item-color"`
-		HideSettingsButton       bool   `form:"hide-settings-button"`
-		HideHelpButton           bool   `form:"hide-help-button"`
-		HideWarningsButton       bool   `form:"hide-warnings-button"`
-		EnableEncryptedLink      bool   `form:"enable-encrypted-link"`
-		IconMode                 string `form:"icon-mode"`
-		KeepLetterCase           bool   `form:"keep-letter-case"`
-		Locale                   string `form:"locale"`
-		HomeMaxColumns           string `form:"home-max-columns"`
-		HomeMaxWidth             string `form:"home-max-width"`
-		OptionCustomDay          string `form:"custom-day"`
-		OptionCustomMonth        string `form:"custom-month"`
+		OptionTitle              string  `form:"title"`
+		OptionFooter             string  `form:"footer"`
+		OptionSiteIcon           string  `form:"site-icon"`
+		OptionOpenAppNewTab      bool    `form:"open-app-newtab"`
+		OptionOpenBookmarkNewTab bool    `form:"open-bookmark-newtab"`
+		LocalNetworkURL          *string `form:"local-network-url"`
+		OptionShowTitle          bool    `form:"show-title"`
+		OptionGreetings          *string `form:"greetings"`
+		OptionShowDateTime       bool    `form:"show-datetime"`
+		OptionShowApps           bool    `form:"show-apps"`
+		OptionShowFavorites      bool    `form:"show-favorites"`
+		OptionShowBookmarks      bool    `form:"show-bookmarks"`
+		OptionAppsTitle          string  `form:"apps-title"`
+		OptionFavoritesTitle     string  `form:"favorites-title"`
+		OptionBookmarksTitle     string  `form:"bookmarks-title"`
+		BookmarkCategoryColor    string  `form:"bookmark-category-color"`
+		BookmarkItemColor        string  `form:"bookmark-item-color"`
+		HideSettingsButton       bool    `form:"hide-settings-button"`
+		HideHelpButton           bool    `form:"hide-help-button"`
+		HideWarningsButton       bool    `form:"hide-warnings-button"`
+		EnableEncryptedLink      bool    `form:"enable-encrypted-link"`
+		IconMode                 string  `form:"icon-mode"`
+		KeepLetterCase           bool    `form:"keep-letter-case"`
+		Locale                   string  `form:"locale"`
+		HomeMaxColumns           string  `form:"home-max-columns"`
+		HomeMaxWidth             string  `form:"home-max-width"`
+		OptionCustomDay          string  `form:"custom-day"`
+		OptionCustomMonth        string  `form:"custom-month"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, "missing form data"))
@@ -92,6 +94,11 @@ func updateAppearanceOptions(c *echo.Context) error {
 		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, err.Error()))
 	}
 	var update model.Application
+	if body.LocalNetworkURL != nil {
+		if _, err := data.NormalizeLocalNetworkURL(*body.LocalNetworkURL); err != nil {
+			return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, err.Error()))
+		}
+	}
 	update.Title = body.OptionTitle
 	update.Footer = footer.Sanitize(body.OptionFooter)
 	update.SiteIcon = siteIcon
@@ -99,7 +106,6 @@ func updateAppearanceOptions(c *echo.Context) error {
 	update.OpenAppNewTab = body.OptionOpenAppNewTab
 	update.OpenBookmarkNewTab = body.OptionOpenBookmarkNewTab
 	update.ShowTitle = body.OptionShowTitle
-	update.Greetings = body.OptionGreetings
 	update.ShowDateTime = body.OptionShowDateTime
 	update.ShowApps = body.OptionShowApps
 	update.ShowFavorites = body.OptionShowFavorites
@@ -120,13 +126,13 @@ func updateAppearanceOptions(c *echo.Context) error {
 	}
 	update.HomeMaxColumns = homeMaxColumns
 	update.HomeMaxWidth = homeMaxWidth
-	if err := data.UpdateAppearance(update); err != nil {
+	if err := data.UpdateAppearanceWithOptionalNetwork(update, body.OptionGreetings, body.LocalNetworkURL); err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
 	if err := define.UpdatePagePalettes(); err != nil {
 		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
 	}
-	return pageAppearance(c)
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.Appearance.Path)
 }
 
 func normalizeOptionalSiteIcon(input string) (string, error) {
@@ -218,6 +224,10 @@ func pageAppearance(c *echo.Context) error {
 	m["SiteIconOptions"] = renderSiteIconOptions()
 	m["OptionOpenAppNewTab"] = options.OpenAppNewTab
 	m["OptionOpenBookmarkNewTab"] = options.OpenBookmarkNewTab
+	m["OptionLocalNetworkURL"] = options.LocalNetworkURL
+	m["LocalNetworkStyle"] = localnetwork.Style()
+	m["LocalNetworkScript"] = localnetwork.Script(localnetwork.Config(options, c.Request()))
+	m["LocalNetworkRefreshIcon"] = template.HTML(mdi.GetIconByName("refresh"))
 	m["OptionShowTitle"] = options.ShowTitle
 	m["OptionGreetings"] = options.Greetings
 	m["OptionShowDateTime"] = options.ShowDateTime
@@ -240,7 +250,7 @@ func pageAppearance(c *echo.Context) error {
 	m["OptionHomeMaxWidth"] = options.HomeMaxWidth
 	m["Locale"] = locale
 	m["RenderWarnings"] = renderWarnings
-	return c.Render(http.StatusOK, "settings.html", m)
+	return settingsroot.Render(c, http.StatusOK, m)
 }
 
 func renderSiteIconOptions() template.HTML {

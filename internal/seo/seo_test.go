@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/internal/netutil"
 )
 
 func testOptions(locale string) model.Application {
@@ -21,7 +22,10 @@ func testOptions(locale string) model.Application {
 
 func TestResolveOriginPrefersConfiguredSiteURL(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "http://internal.localhost:8080/", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
 	request.Host = "internal.localhost:8080"
+	request.Header.Set("X-Forwarded-Host", "different.example:9443")
+	request.Header.Set("X-Forwarded-Proto", "https")
 
 	options := testOptions("zh")
 	options.SiteURL = "https://flare.example.com/"
@@ -33,6 +37,7 @@ func TestResolveOriginPrefersConfiguredSiteURL(t *testing.T) {
 
 func TestResolveOriginHonoursForwardedHeaders(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "http://10.0.0.5:8080/", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
 	request.Host = "10.0.0.5:8080"
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Forwarded-Host", "flare.example.com")
@@ -42,25 +47,69 @@ func TestResolveOriginHonoursForwardedHeaders(t *testing.T) {
 	}
 }
 
-func TestResolveOriginRejectsUnsafeForwardedHost(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "http://10.0.0.5:8080/", nil)
-	request.Host = "10.0.0.5:8080"
-	// A host header carrying a path/quote must never reach canonical URLs.
-	request.Header.Set("X-Forwarded-Host", `evil.example.com"><script>`)
+func TestResolveOriginOnlyAcceptsForwardedHostFromTrustedProxy(t *testing.T) {
+	for _, tc := range []struct {
+		name, trusted, peer, host, want string
+	}{
+		{"untrusted-public", "", "93.184.216.34:1234", "forwarded.example:9443", "http://nav.example.test"},
+		{"untrusted-private", "", "192.168.1.2:1234", "forwarded.example:9443", "http://nav.example.test"},
+		{"disabled-loopback", "none", "127.0.0.1:1234", "forwarded.example:9443", "http://nav.example.test"},
+		{"trusted-loopback", "", "127.0.0.1:1234", " Forwarded.Example:9443 , other.example", "https://forwarded.example:9443"},
+		{"configured-cidr", "10.1.0.0/16", "10.1.2.3:1234", "forwarded.example:9443", "https://forwarded.example:9443"},
+		{"outside-cidr", "10.1.0.0/16", "10.2.2.3:1234", "forwarded.example:9443", "http://nav.example.test"},
+		{"unsafe-trusted-host", "", "127.0.0.1:1234", "evil.example/path", "https://nav.example.test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proxies, err := netutil.ParseTrustedProxies(tc.trusted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "http://nav.example.test/", nil)
+			request.RemoteAddr = tc.peer
+			request.Header.Set("X-Forwarded-Host", tc.host)
+			request.Header.Set("X-Forwarded-Proto", "https")
+			if got := ResolveOrigin(testOptions("zh"), netutil.WithTrustedProxies(request, proxies)); got != tc.want {
+				t.Fatalf("origin=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
-	if got := ResolveOrigin(testOptions("zh"), request); got != "http://10.0.0.5:8080" {
-		t.Fatalf("expected fallback host, got %q", got)
+func TestResolveOriginRejectsUnsafeForwardedHost(t *testing.T) {
+	for _, host := range []string{
+		`evil.example.com"><script>`,
+		"evil.example/path",
+		"evil.example:",
+		"evil.example:bad",
+		"evil.example:65536",
+		"[fe80::1%eth0]:8080",
+	} {
+		t.Run(host, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "http://10.0.0.5:8080/", nil)
+			request.Host = "10.0.0.5:8080"
+			request.RemoteAddr = "127.0.0.1:1234"
+			request.Header.Set("X-Forwarded-Host", host)
+
+			if got := ResolveOrigin(testOptions("zh"), request); got != "http://10.0.0.5:8080" {
+				t.Fatalf("expected fallback host, got %q", got)
+			}
+		})
 	}
 }
 
 func TestNormalizeSiteURL(t *testing.T) {
 	cases := map[string]string{
-		"https://flare.example.com/":       "https://flare.example.com",
-		" https://flare.example.com/base/": "https://flare.example.com/base",
-		"ftp://flare.example.com":          "",
-		"flare.example.com":                "",
-		"":                                 "",
-		"javascript:alert(1)":              "",
+		"https://flare.example.com/":        "https://flare.example.com",
+		" https://flare.example.com/base/":  "https://flare.example.com/base",
+		"ftp://flare.example.com":           "",
+		"flare.example.com":                 "",
+		"":                                  "",
+		"javascript:alert(1)":               "",
+		"https://user:password@example.com": "",
+		"https://example.com:65536":         "",
+		"https://example.com:":              "",
+		"HTTPS://EXAMPLE.COM:443/base/":     "https://EXAMPLE.COM:443/base",
+		"https://example.com/a%3Fb/%2F/":    "https://example.com/a%3Fb/%2F",
 	}
 	for input, want := range cases {
 		if got := NormalizeSiteURL(input); got != want {

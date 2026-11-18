@@ -77,6 +77,7 @@ func ParseEnvVarsE() (stor model.Flags, err error) {
 	stor.Visibility = defaults.Visibility
 	stor.EnableEditor = defaults.EnableEditor
 	stor.DisableCSP = defaults.DisableCSP
+	stor.TrustedProxies = defaults.TrustedProxies
 	stor.CookieName = defaults.CookieName
 	stor.CookieSecret = defaults.CookieSecret
 

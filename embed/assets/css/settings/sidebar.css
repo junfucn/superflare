@@ -18,11 +18,38 @@
   border-left: 3px solid var(--color-primary);
 }
 
-#page-settings .sidebar:hover a.active {
-  border-left: 3px solid transparent;
-}
-
 #page-settings .sidebar a:hover,
 #page-settings .sidebar a.active:hover {
   border-left: 3px solid var(--color-primary);
+}
+
+@media (max-width: 640px) {
+  #page-settings .sidebar {
+    position: static;
+    float: none;
+    width: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+
+  #page-settings .sidebar a {
+    display: grid;
+    place-items: center;
+    min-height: 40px;
+    height: auto;
+    padding: 6px;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+    border-radius: 4px;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  #page-settings .sidebar a:is(.active, :hover) {
+    border-color: var(--color-primary);
+    border-left-width: 1px;
+    background: color-mix(in srgb, var(--color-primary) 12%, var(--color-background));
+  }
 }

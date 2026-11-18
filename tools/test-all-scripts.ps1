@@ -56,6 +56,7 @@ function Test-ShellScripts {
         "tools/docker/docker-entrypoint.sh",
         "tools/docker/build-image.sh",
         "fnapp/superflare/cmd/common.sh",
+        "fnapp/superflare/cmd/storage.sh",
         "fnapp/superflare/cmd/config_callback",
         "fnapp/superflare/cmd/config_init",
         "fnapp/superflare/cmd/install_callback",
@@ -191,6 +192,7 @@ function Test-WindowsRuntimeCompatibility {
 
 function Test-JsonAndTextFixtures {
     $jsonFiles = @(
+        "fnapp/superflare/config/resource",
         "fnapp/superflare/wizard/config",
         "fnapp/superflare/wizard/install"
     )
@@ -242,7 +244,7 @@ function Test-SiteIconScript {
     $testScript = Join-Path $repoRoot "tools/test-site-icons.cjs"
     Assert-True -Condition (Test-Path $testScript -PathType Leaf) -Message "Missing site icon script test: $testScript"
 
-    & $node.Source --test $testScript
+    & $node.Source --test $testScript (Join-Path $repoRoot "tools/test-editor-safety.cjs") (Join-Path $repoRoot "tools/test-settings-interactions.cjs") (Join-Path $repoRoot "tools/test-local-network.cjs")
     if ($LASTEXITCODE -ne 0) {
         throw "Site icon script tests failed with exit code $LASTEXITCODE."
     }

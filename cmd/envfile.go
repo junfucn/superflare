@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/junfuchang/superflare/config/data"
-	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/fn"
 	"github.com/junfuchang/superflare/internal/logger"
@@ -81,9 +80,11 @@ func ParseEnvFileE(baseFlags model.Flags) (model.Flags, error) {
 		return baseFlags, nil
 	}
 
-	envs, err := ini.LoadSources(ini.LoadOptions{
-		IgnoreInlineComment: true,
-	}, envPath)
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		return baseFlags, fmt.Errorf("read .env file failed: %w", err)
+	}
+	envs, err := data.LoadEnvFileFromContent(content)
 	if err != nil {
 		return baseFlags, fmt.Errorf("parse .env file failed: %w", err)
 	}
@@ -91,19 +92,19 @@ func ParseEnvFileE(baseFlags model.Flags) (model.Flags, error) {
 	if err := envs.MapTo(&model.Envs{}); err != nil {
 		return baseFlags, fmt.Errorf("map .env values failed: %w", err)
 	}
-	rawUser := strings.TrimSpace(envs.Section("").Key("FLARE_USER").String())
-	rawPass := strings.TrimSpace(envs.Section("").Key("FLARE_PASS").String())
-	if rawUser == "" || rawPass == "" {
-		if err := data.ResetEnvLoginCredentialsToDefault(envPath); err != nil {
-			return baseFlags, fmt.Errorf("repair .env login config failed: %w", err)
-		}
-		rawUser = define.DEFAULT_LOGIN_USER
-		rawPass = define.DEFAULT_LOGIN_PASS
-		envs.Section("").Key("FLARE_USER").SetValue(rawUser)
-		envs.Section("").Key("FLARE_PASS").SetValue(rawPass)
+	rawUser := strings.TrimSpace(envs.Section("").Key("FLARE_USER").Value())
+	rawPass := strings.TrimSpace(envs.Section("").Key("FLARE_PASS").Value())
+	if (rawUser == "") != (rawPass == "") {
+		// A partial pair cannot safely select an account. Treat it as an absent
+		// override so a valid process environment or persisted config remains in
+		// control, and do not rewrite the user's .env file during startup.
+		rawUser = ""
+		rawPass = ""
 	}
-	if err := data.ValidateLoginCredentialPair(rawUser, rawPass, ".env"); err != nil {
-		return baseFlags, fmt.Errorf("parse .env login config failed: %w", err)
+	if rawUser != "" || rawPass != "" {
+		if err := data.ValidateLoginCredentialPair(rawUser, rawPass, ".env"); err != nil {
+			return baseFlags, fmt.Errorf("parse .env login config failed: %w", err)
+		}
 	}
 
 	rawPort := strings.TrimSpace(envs.Section("").Key("FLARE_PORT").String())
@@ -118,21 +119,13 @@ func ParseEnvFileE(baseFlags model.Flags) (model.Flags, error) {
 		baseFlags.Port = port
 	}
 
-	user, err := GetDotEnvFileStringOrDefault(envs, "FLARE_USER", baseFlags.User)
-	if err != nil {
-		return baseFlags, err
-	}
-	baseFlags.User = user
 	if rawUser != "" {
+		baseFlags.User = rawUser
 		baseFlags.UserIsGenerated = false
 	}
 
-	pass, err := GetDotEnvFileStringOrDefault(envs, "FLARE_PASS", baseFlags.Pass)
-	if err != nil {
-		return baseFlags, err
-	}
-	baseFlags.Pass = pass
 	if rawPass != "" {
+		baseFlags.Pass = rawPass
 		baseFlags.PassIsGenerated = false
 	}
 
@@ -166,6 +159,10 @@ func ParseEnvFileE(baseFlags model.Flags) (model.Flags, error) {
 		return baseFlags, err
 	}
 	baseFlags.CookieSecret, err = GetDotEnvFileStringOrDefault(envs, "FLARE_COOKIE_SECRET", baseFlags.CookieSecret)
+	if err != nil {
+		return baseFlags, err
+	}
+	baseFlags.TrustedProxies, err = GetDotEnvFileStringOrDefault(envs, "FLARE_TRUSTED_PROXIES", baseFlags.TrustedProxies)
 	if err != nil {
 		return baseFlags, err
 	}

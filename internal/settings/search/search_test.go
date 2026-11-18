@@ -65,22 +65,19 @@ func TestUpdateSearchOptionsReturnsStyledBadRequestWhenCustomEngineTemplateInval
 	form.Set("search-mode", "engine")
 	form.Set("search-engine", "custom")
 	form.Set("search-engine-open-mode", "same-tab")
-	form.Set("search-engine-custom-template", "https://example.com/search")
+	form.Set("search-engine-custom-template", "example.invalid/search?q=%s")
 	req := httptest.NewRequest(http.MethodPost, "/settings/search", strings.NewReader(form.Encode()))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	rec := httptest.NewRecorder()
 	e := echo.New()
-	e.Renderer = searchTestRenderer{}
+	e.Renderer = searchCaptureRenderer{t: t, wantInvalidTemplate: form.Get("search-engine-custom-template")}
 	c := e.NewContext(req, rec)
 
 	if err := updateSearchOptions(c); err != nil {
 		t.Fatalf("updateSearchOptions: %v", err)
 	}
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "custom search engine template must contain %s placeholder") {
-		t.Fatalf("expected custom template validation error, got %s", rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
 	}
 }
 
@@ -169,8 +166,9 @@ func TestPageSearchKeepsStoredRuntimeDebugModeAfterAppFlagsChange(t *testing.T) 
 }
 
 type searchCaptureRenderer struct {
-	t           *testing.T
-	expectDebug bool
+	t                   *testing.T
+	expectDebug         bool
+	wantInvalidTemplate string
 }
 
 func (r searchCaptureRenderer) Render(c *echo.Context, w io.Writer, name string, data any) error {
@@ -186,6 +184,11 @@ func (r searchCaptureRenderer) Render(c *echo.Context, w io.Writer, name string,
 	got, _ := m["DebugMode"].(bool)
 	if got != r.expectDebug {
 		r.t.Fatalf("expected DebugMode=%v, got %v", r.expectDebug, got)
+	}
+	if r.wantInvalidTemplate != "" &&
+		(m["SearchEngineCustomTemplateInvalid"] != true || m["SearchEngineCustomTemplate"] != r.wantInvalidTemplate) {
+		r.t.Fatalf("expected invalid template to stay editable, got invalid=%v, template=%v",
+			m["SearchEngineCustomTemplateInvalid"], m["SearchEngineCustomTemplate"])
 	}
 	return nil
 }

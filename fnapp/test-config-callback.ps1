@@ -1,11 +1,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "test-binary.ps1")
 
 $scriptPath = Join-Path $PSScriptRoot "superflare\cmd\config_callback"
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("superflare-config-callback-" + [System.Guid]::NewGuid().ToString("N"))
 $appRoot = Join-Path $tmpRoot "app"
 $etcRoot = Join-Path $tmpRoot "etc"
 $varRoot = Join-Path $tmpRoot "var"
+$shareRoot = Join-Path $tmpRoot "shared files"
+$sharedEtcRoot = Join-Path $shareRoot "data/etc"
 $defaultsRoot = Join-Path $appRoot "server\defaults"
 $serverRoot = Join-Path $appRoot "server"
 
@@ -36,6 +39,7 @@ try {
     $null = New-Item -ItemType Directory -Path $defaultsRoot -Force
     $null = New-Item -ItemType Directory -Path $etcRoot -Force
     $null = New-Item -ItemType Directory -Path $varRoot -Force
+    $null = New-Item -ItemType Directory -Path $shareRoot -Force
 
     @"
 Title: 'SuperFlare'
@@ -52,16 +56,15 @@ FLARE_PASS=old-pass
 FLARE_COOKIE_SECRET=test-secret
 "@ | Set-Content -Path (Join-Path $etcRoot ".env") -Encoding UTF8
 
-    @"
-#!/bin/sh
-while true; do sleep 60; done
-"@ | Set-Content -Path (Join-Path $serverRoot "superflare") -Encoding ASCII
+    $testBinary = Build-TestAppBinary $tmpRoot
+    Write-TestAppShim (Join-Path $serverRoot "superflare") $testBinary
 
     $bashPath = Resolve-GitBash
     $scriptSh = To-ShPath $scriptPath
     $appSh = To-ShPath $appRoot
     $etcSh = To-ShPath $etcRoot
     $varSh = To-ShPath $varRoot
+    $shareSh = To-ShPath $shareRoot
     & $bashPath -c "chmod +x '$appSh/server/superflare'"
 
     $callbackHarnessRoot = Join-Path $tmpRoot "write-failure-harness"
@@ -72,6 +75,7 @@ while true; do sleep 60; done
     Copy-Item -LiteralPath $scriptPath -Destination $callbackHarnessScript
     [System.IO.File]::WriteAllText($callbackHarnessCommon, @'
 CONFIG_FILE="${HARNESS_CONFIG_FILE:-}"
+trim_value() { printf '%s' "$1"; }
 ensure_runtime_layout() { return 0; }
 read_yaml_value() {
     if [ "${HARNESS_READ_FAIL:-false}" = "true" ]; then
@@ -115,31 +119,31 @@ log_lifecycle() { printf '%s\n' "$*" >> "${HARNESS_LOG}"; }
         throw "config_callback did not log the current-login read failure."
     }
 
-    $command = "TRIM_APPDEST='$appSh' TRIM_PKGETC='$etcSh' TRIM_PKGVAR='$varSh' wizard_login_enabled='false' wizard_login_user='new-user' wizard_login_pass='new-pass' wizard_login_pass_confirm='new-pass' '$scriptSh'"
+    $command = "TRIM_APPDEST='$appSh' TRIM_PKGETC='$etcSh' TRIM_PKGVAR='$varSh' TRIM_DATA_SHARE_PATHS='$shareSh' wizard_login_enabled='false' wizard_login_user='new-user' wizard_login_pass='new-pass' wizard_login_pass_confirm='new-pass' '$scriptSh'"
     $output = & $bashPath -c $command 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "config_callback disable-login run failed with code $LASTEXITCODE`n$output"
     }
 
-    $envText = Get-Content -Raw -LiteralPath (Join-Path $etcRoot ".env")
-    $configText = Get-Content -Raw -LiteralPath (Join-Path $etcRoot "config.yml")
+    $envText = Get-Content -Raw -LiteralPath (Join-Path $sharedEtcRoot ".env")
+    $configText = Get-Content -Raw -LiteralPath (Join-Path $sharedEtcRoot "config.yml")
     if ($envText -notmatch "(?m)^FLARE_DISABLE_LOGIN=true$") {
         throw "Expected disabled login to write FLARE_DISABLE_LOGIN=true. Actual .env:`n$envText"
     }
     if ($envText -notmatch "(?m)^FLARE_USER=new-user$" -or $envText -notmatch "(?m)^FLARE_PASS=new-pass$") {
         throw "Expected login credentials to be synced to .env. Actual .env:`n$envText"
     }
-    if ($configText -notmatch "LoginUser: 'new-user'" -or $configText -notmatch "LoginPass: 'new-pass'") {
+    if ($configText -notmatch "LoginUser: new-user" -or $configText -notmatch "LoginPass: new-pass") {
         throw "Expected login credentials to be synced to config.yml. Actual config.yml:`n$configText"
     }
 
-    $command = "TRIM_APPDEST='$appSh' TRIM_PKGETC='$etcSh' TRIM_PKGVAR='$varSh' wizard_login_enabled='true' wizard_login_user='' wizard_login_pass='' wizard_login_pass_confirm='' '$scriptSh'"
+    $command = "TRIM_APPDEST='$appSh' TRIM_PKGETC='$etcSh' TRIM_PKGVAR='$varSh' TRIM_DATA_SHARE_PATHS='$shareSh' wizard_login_enabled='true' wizard_login_user='' wizard_login_pass='' wizard_login_pass_confirm='' '$scriptSh'"
     $output = & $bashPath -c $command 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "config_callback enable-login run failed with code $LASTEXITCODE`n$output"
     }
 
-    $envText = Get-Content -Raw -LiteralPath (Join-Path $etcRoot ".env")
+    $envText = Get-Content -Raw -LiteralPath (Join-Path $sharedEtcRoot ".env")
     if ($envText -notmatch "(?m)^FLARE_DISABLE_LOGIN=false$") {
         throw "Expected enabled login to write FLARE_DISABLE_LOGIN=false. Actual .env:`n$envText"
     }

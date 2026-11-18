@@ -11,7 +11,7 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 )
 
-func initBookmarks(filePath string, isFavorite bool) (result model.Bookmarks, err error) {
+func initBookmarksLocked(filePath string, isFavorite bool) (result model.Bookmarks, err error) {
 	defaultName := "bookmarks.yml"
 	if isFavorite {
 		defaultName = "apps.yml"
@@ -22,7 +22,7 @@ func initBookmarks(filePath string, isFavorite bool) (result model.Bookmarks, er
 		return result, err
 	}
 
-	if err := saveFile(filePath, out); err != nil {
+	if err := saveFileLocked(filePath, out); err != nil {
 		log.Println("save default bookmarks failed")
 		return result, fmt.Errorf("save default bookmarks failed: %w", err)
 	}

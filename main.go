@@ -9,6 +9,13 @@ import (
 )
 
 func main() {
+	if handled, err := cmd.RunConfigCommand(os.Args[1:], os.Stdin, os.Stdout); handled {
+		if err != nil {
+			log.Printf("superflare configuration command failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 	flags, err := cmd.ParseE()
 	if err != nil {
 		log.Printf("superflare startup config error: %v", err)

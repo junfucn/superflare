@@ -4,8 +4,9 @@ const (
 	_KEY_DEBUG       = "debug"
 	_KEY_DEBUG_SHORT = "D"
 
-	_KEY_PORT       = "port"
-	_KEY_PORT_SHORT = "p"
+	_KEY_PORT            = "port"
+	_KEY_PORT_SHORT      = "p"
+	_KEY_TRUSTED_PROXIES = "trusted_proxies"
 
 	_KEY_MINI_REQUEST       = "mini_request"
 	_KEY_MINI_REQUEST_SHORT = "m"

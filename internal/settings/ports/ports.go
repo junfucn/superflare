@@ -2,6 +2,7 @@ package ports
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
 	"github.com/junfuchang/superflare/internal/footer"
+	"github.com/junfuchang/superflare/internal/i18n"
 	"github.com/junfuchang/superflare/internal/pool"
 	portscollector "github.com/junfuchang/superflare/internal/ports"
 	settingsroot "github.com/junfuchang/superflare/internal/settings"
@@ -27,6 +29,7 @@ func RegisterRouting(e *echo.Echo) {
 	e.GET(define.SettingPages.Ports.Path, pagePorts, auth.AuthRequired)
 	e.GET(portsDataPath(), pagePortsData, auth.AuthRequired)
 	e.POST(define.SettingPages.Ports.Path, updatePortRemarks, auth.AuthRequired)
+	e.POST(portCollectionPath(), updatePortCollection, auth.AuthRequired)
 }
 
 func rejectWhenLoginDisabled(c *echo.Context) error {
@@ -48,16 +51,27 @@ func portsFailurePayload(message string, err error) map[string]any {
 }
 
 type portsDataPayload struct {
-	OK       bool             `json:"ok"`
-	Items    []model.PortInfo `json:"items"`
-	Warnings []string         `json:"warnings,omitempty"`
+	OK                bool             `json:"ok"`
+	Revision          string           `json:"revision"`
+	CollectionEnabled bool             `json:"collectionEnabled"`
+	Items             []model.PortInfo `json:"items"`
+	Warnings          []string         `json:"warnings,omitempty"`
 }
 
-func ensureSettingsConfigLoadable(c *echo.Context) error {
-	if _, err := data.GetAllSettingsOptions(); err != nil {
-		return c.JSON(http.StatusInternalServerError, portsFailurePayload("settings config error", err))
+func updatePortCollection(c *echo.Context) error {
+	if err := rejectWhenLoginDisabled(c); err != nil {
+		return err
 	}
-	return nil
+	var body struct {
+		Enabled bool `form:"enabled"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return statuspage.HTML(c, http.StatusBadRequest, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusBadRequest, "invalid form data"))
+	}
+	if err := data.UpdatePortCollectionEnabled(body.Enabled); err != nil {
+		return statuspage.HTML(c, http.StatusInternalServerError, statuspage.BuildHTTPErrorPage(statuspage.CurrentLocale(c), http.StatusInternalServerError, err.Error()))
+	}
+	return settingsroot.RedirectAfterSave(c, define.SettingPages.Ports.Path)
 }
 
 func updatePortRemarks(c *echo.Context) error {
@@ -67,6 +81,7 @@ func updatePortRemarks(c *echo.Context) error {
 	var body struct {
 		Ports         string `form:"ports"`
 		IncludeHidden string `form:"includeHidden"`
+		Revision      string `form:"revision"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, portsFailurePayload("missing form data", err))
@@ -81,25 +96,21 @@ func updatePortRemarks(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, portsFailurePayload("parse ports payload failed", err))
 	}
-	if err := ensureSettingsConfigLoadable(c); err != nil {
-		return err
+	options, err := data.GetAllSettingsOptions()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, portsFailurePayload("settings config error", err))
 	}
-	if !parseBoolValue(body.IncludeHidden) {
-		bindings, err = keepExistingHiddenBindings(bindings)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, portsFailurePayload("ports config error", err))
-		}
+	revision, err := data.UpdatePortRemarksWithRevision(bindings, body.Revision, parseBoolValue(body.IncludeHidden))
+	if errors.Is(err, data.ErrPortRevisionConflict) {
+		return c.JSON(http.StatusConflict, portsFailurePayload(i18n.T(options.Locale, "ports_revision_conflict"), nil))
 	}
-	if err := data.UpdatePortRemarks(bindings); err != nil {
+	if err != nil {
 		return c.JSON(http.StatusInternalServerError, portsFailurePayload("save ports failed", err))
 	}
-	return c.JSON(http.StatusOK, map[string]bool{"ok": true})
+	return c.JSON(http.StatusOK, map[string]any{"ok": true, "revision": revision})
 }
 
 func parsePortBindings(raw string) ([]model.PortBinding, error) {
-	if strings.TrimSpace(raw) == "" {
-		return nil, nil
-	}
 	var rows []struct {
 		Port     any    `json:"Port"`
 		Protocol string `json:"Protocol"`
@@ -109,15 +120,13 @@ func parsePortBindings(raw string) ([]model.PortBinding, error) {
 	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
 		return nil, err
 	}
+	if rows == nil {
+		return nil, errors.New("ports payload must be a list")
+	}
 	result := make([]model.PortBinding, 0, len(rows))
 	for index, row := range rows {
 		remark := strings.TrimSpace(row.Remark)
 		hidden := parseBoolValue(row.Hidden)
-		if remark == "" {
-			if !hidden {
-				continue
-			}
-		}
 		port, err := parsePortValue(row.Port)
 		if err != nil {
 			return nil, fmt.Errorf("invalid port value at row %d: %w", index+1, err)
@@ -128,6 +137,9 @@ func parsePortBindings(raw string) ([]model.PortBinding, error) {
 		protocol, err := parsePortProtocol(row.Protocol)
 		if err != nil {
 			return nil, fmt.Errorf("invalid protocol at row %d: %w", index+1, err)
+		}
+		if remark == "" && !hidden {
+			continue
 		}
 		result = append(result, model.PortBinding{Port: port, Protocol: protocol, Remark: remark, Hidden: hidden})
 	}
@@ -182,38 +194,6 @@ func parseBoolValue(value any) bool {
 	}
 }
 
-func keepExistingHiddenBindings(items []model.PortBinding) ([]model.PortBinding, error) {
-	current, err := data.LoadPortBindings()
-	if err != nil {
-		return nil, err
-	}
-	seen := make(map[string]bool, len(items))
-	for _, item := range items {
-		seen[portBindingKey(item.Protocol, item.Port)] = true
-	}
-	result := make([]model.PortBinding, 0, len(items)+len(current.Items))
-	result = append(result, items...)
-	for _, item := range current.Items {
-		if !item.Hidden {
-			continue
-		}
-		key := portBindingKey(item.Protocol, item.Port)
-		if seen[key] {
-			continue
-		}
-		result = append(result, item)
-	}
-	return result, nil
-}
-
-func portBindingKey(protocol string, port int) string {
-	protocol = strings.ToLower(strings.TrimSpace(protocol))
-	if protocol != "udp" {
-		protocol = "tcp"
-	}
-	return protocol + ":" + strconv.Itoa(port)
-}
-
 func pagePortsData(c *echo.Context) error {
 	if err := rejectWhenLoginDisabled(c); err != nil {
 		return err
@@ -224,18 +204,29 @@ func pagePortsData(c *echo.Context) error {
 	}
 	locale := options.Locale
 	includeHidden := parseBoolValue(c.QueryParam("includeHidden"))
-	bindings, err := data.GetPortBindingMapWithError()
+	bindings, revision, err := data.GetPortBindingMapWithRevision()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, portsFailurePayload("ports config error", err))
+	}
+	if options.DisablePortCollection {
+		return c.JSON(http.StatusOK, portsDataPayload{
+			OK:                true,
+			Revision:          revision,
+			CollectionEnabled: false,
+			Items:             portscollector.MergeRuntimeAndBindings(nil, bindings, includeHidden),
+			Warnings:          []string{i18n.T(locale, "port_collection_disabled")},
+		})
 	}
 	report, err := portscollectorCollectReportWithBindingsErr(bindings, includeHidden)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, portsFailurePayload("ports runtime collect error", err))
 	}
 	return c.JSON(http.StatusOK, portsDataPayload{
-		OK:       true,
-		Items:    report.Items,
-		Warnings: formatPortCollectionWarnings(locale, report.Warnings),
+		OK:                true,
+		Revision:          revision,
+		CollectionEnabled: true,
+		Items:             report.Items,
+		Warnings:          formatPortCollectionWarnings(locale, report.Warnings),
 	})
 }
 
@@ -295,7 +286,13 @@ func pagePorts(c *echo.Context) error {
 	m["RenderWarnings"] = renderWarnings
 	m["PortsData"] = template.HTML("[]")
 	m["PortsDataURI"] = portsDataPath()
-	return c.Render(http.StatusOK, "settings.html", m)
+	m["PortCollectionEnabled"] = !options.DisablePortCollection
+	m["PortCollectionURI"] = portCollectionPath()
+	return settingsroot.Render(c, http.StatusOK, m)
+}
+
+func portCollectionPath() string {
+	return define.SettingPages.Ports.Path + "/collection"
 }
 
 func portsDataPath() string {

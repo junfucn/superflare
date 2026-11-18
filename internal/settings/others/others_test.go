@@ -178,8 +178,8 @@ func TestUpdateLoginOptionsRefreshesSessionOnlyWhenEffectiveCredentialsChange(t 
 			}
 			defer protectedResp.Body.Close()
 			if !tt.expectLogout {
-				if updateResp.StatusCode != http.StatusOK {
-					t.Fatalf("expected unchanged credentials to keep the settings page active, got %d", updateResp.StatusCode)
+				if updateResp.StatusCode != http.StatusSeeOther {
+					t.Fatalf("expected unchanged credentials to redirect after saving, got %d", updateResp.StatusCode)
 				}
 				if setCookies := updateResp.Header.Values("Set-Cookie"); len(setCookies) != 0 {
 					t.Fatalf("expected unchanged credentials not to expire the session cookie, got %v", setCookies)
@@ -190,10 +190,10 @@ func TestUpdateLoginOptionsRefreshesSessionOnlyWhenEffectiveCredentialsChange(t 
 				return
 			}
 
-			if updateResp.StatusCode != http.StatusFound {
+			if updateResp.StatusCode != http.StatusSeeOther {
 				t.Fatalf("expected credential update to require a new login, got %d", updateResp.StatusCode)
 			}
-			if location := updateResp.Header.Get("Location"); location != define.SettingPages.Others.Path {
+			if location := updateResp.Header.Get("Location"); location != define.SettingPages.Others.Path+"?saved=1" {
 				t.Fatalf("expected redirect to login page %q, got %q", define.SettingPages.Others.Path, location)
 			}
 			if protectedResp.StatusCode != http.StatusFound {

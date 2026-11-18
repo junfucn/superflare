@@ -22,6 +22,7 @@ func GetCliFlags() (*model.Flags, *flags.FlagSet, error) {
 	options.SortFlags = false
 
 	options.IntVarP(&cliFlags.Port, _KEY_PORT, _KEY_PORT_SHORT, define.DEFAULT_PORT, "listen port")
+	options.StringVar(&cliFlags.TrustedProxies, _KEY_TRUSTED_PROXIES, "", "trusted proxy IPs/CIDRs, comma-separated (default: loopback; none: disabled)")
 	options.BoolVarP(&cliFlags.EnableGuide, _KEY_ENABLE_GUIDE, _KEY_ENABLE_GUIDE_SHORT, define.DEFAULT_ENABLE_GUIDE, "enable guide page")
 	options.StringVarP(&cliFlags.Visibility, _KEY_VISIBILITY, _KEY_VISIBILITY_SHORT, define.DEFAULT_VISIBILITY, "site visibility")
 
@@ -93,6 +94,7 @@ func resolveCLIFlags(baseFlags model.Flags, cliFlags *model.Flags, fs *flags.Fla
 		return baseFlags, fmt.Errorf("resolve --%s failed: %w", _KEY_PORT, err)
 	}
 	baseFlags.Port = port
+	baseFlags.TrustedProxies = configutil.ResolveStringPflag(fs, _KEY_TRUSTED_PROXIES, "", baseFlags.TrustedProxies, true)
 
 	baseFlags.EnableMinimumRequest = configutil.ResolveBoolPflag(fs, _KEY_MINI_REQUEST, "", baseFlags.EnableMinimumRequest)
 	baseFlags.DisableLoginMode = configutil.ResolveBoolPflag(fs, _KEY_DISABLE_LOGIN, "", baseFlags.DisableLoginMode)

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="{{if .English}}en{{else}}zh-CN{{end}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-{{.Nonce}}'; object-src 'none'; base-uri 'none'">
+  <title>{{if .English}}Opening bookmark{{else}}正在打开书签{{end}}</title>
+  {{.NetworkStyle}}
+  <style>
+    *{box-sizing:border-box}body{margin:0;--color-background:#2d3436;--color-primary:#effbff;--color-accent:#ffa500;background:var(--color-background);color:var(--color-primary);font:15px/1.6 system-ui,sans-serif;letter-spacing:0}
+    main{max-width:640px;margin:15vh auto;padding:24px}h1{font-size:24px;margin:0 0 24px}a{color:var(--color-primary)}
+    .address{margin:20px 0;overflow-wrap:anywhere}.address span{display:block;color:var(--color-accent);font-size:13px}.address a{display:block;padding:8px 0}
+    .local-redirect-warnings{padding:12px;border:1px solid var(--color-accent);border-radius:4px;margin-bottom:20px}
+    .page-background{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}.page-background img{width:100%;height:100%;object-fit:cover;transform:scale(1.08)}
+    @media(max-width:520px){main{margin:8vh auto;padding:20px}}
+  </style>
+</head>
+<body style="{{.Style}}">
+  {{if .Background.Enabled}}<div class="page-background" style="{{.BackgroundStyle}}"><img class="page-background-full" src="{{.Background.FullURL}}" alt=""></div>{{end}}
+  <main>
+    <h1>{{if .English}}Opening bookmark{{else}}正在打开书签{{end}}</h1>
+    {{if .Warnings}}<div class="local-redirect-warnings">{{range .Warnings}}<p>{{.}}</p>{{end}}</div>{{end}}
+    <div class="network-controls" id="local-network-controls"><output id="local-network-status" aria-live="polite">{{if .English}}Checking LAN{{else}}正在识别内网{{end}}</output></div>
+    <div class="address"><span>{{if .English}}LAN address{{else}}内网地址{{end}}</span><a data-network-manual href="{{.Local}}" rel="noopener noreferrer">{{.Local}}</a></div>
+    <div class="address"><span>{{if .English}}Source address{{else}}源地址{{end}}</span><a data-network-manual href="{{.Source}}" rel="noopener noreferrer">{{.Source}}</a></div>
+    <noscript><p>{{if .English}}JavaScript is disabled. Choose an address above.{{else}}浏览器未启用 JavaScript，请选择上方地址。{{end}}</p></noscript>
+  </main>
+  {{if .Background.Enabled}}<script nonce="{{.Nonce}}">{{.BackgroundScript}}</script>{{end}}
+  <script nonce="{{.Nonce}}">{{.Script}}</script>
+</body>
+</html>

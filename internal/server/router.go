@@ -13,9 +13,11 @@ import (
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/auth"
+	"github.com/junfuchang/superflare/internal/localnetwork"
 	"github.com/junfuchang/superflare/internal/logger"
 	"github.com/junfuchang/superflare/internal/misc/health"
 	"github.com/junfuchang/superflare/internal/misc/redir"
+	"github.com/junfuchang/superflare/internal/netutil"
 	"github.com/junfuchang/superflare/internal/pages/editor"
 	"github.com/junfuchang/superflare/internal/pages/guide"
 	"github.com/junfuchang/superflare/internal/pages/home"
@@ -40,12 +42,16 @@ func normalizeRouterFlags(flags model.Flags) model.Flags {
 	flags.Pass = strings.TrimSpace(flags.Pass)
 	flags.CookieName = strings.TrimSpace(flags.CookieName)
 	flags.CookieSecret = strings.TrimSpace(flags.CookieSecret)
+	flags.TrustedProxies = strings.TrimSpace(flags.TrustedProxies)
 	return flags
 }
 
 func validateRouterFlags(flags model.Flags) error {
 	if flags.Port < 1 || flags.Port > 65535 {
 		return fmt.Errorf("invalid port %d: must be between 1 and 65535", flags.Port)
+	}
+	if _, err := netutil.ParseTrustedProxies(flags.TrustedProxies); err != nil {
+		return err
 	}
 	if flags.Visibility != "" {
 		switch flags.Visibility {
@@ -114,6 +120,9 @@ func NewRouter(appFlags *model.Flags) (http.Handler, error) {
 	if err := define.InitE(); err != nil {
 		return nil, fmt.Errorf("initialize theme state: %w", err)
 	}
+	if err := data.EnsureLocalNetworkIdentity(); err != nil {
+		return nil, fmt.Errorf("initialize local network identity: %w", err)
+	}
 
 	assets.SetRuntimeFlags(effectiveFlags)
 	templates.SetRuntimeFlags(effectiveFlags)
@@ -125,8 +134,16 @@ func NewRouter(appFlags *model.Flags) (http.Handler, error) {
 	seo.SetRuntimeFlags(effectiveFlags)
 
 	e := echo.New()
+	trustedProxies, _ := netutil.ParseTrustedProxies(effectiveFlags.TrustedProxies)
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.SetRequest(netutil.WithTrustedProxies(c.Request(), trustedProxies))
+			return next(c)
+		}
+	})
 	e.HTTPErrorHandler = statuspage.HTTPErrorHandler
 	e.Use(middleware.Recover())
+	e.Use(privateResponseCache)
 	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{MinLength: 1024}))
 	if os.Getenv("FLARE_BASELINE") != "1" {
 		log := logger.GetLogger()
@@ -140,6 +157,7 @@ func NewRouter(appFlags *model.Flags) (http.Handler, error) {
 	settings.SetRuntimeFlags(effectiveFlags)
 	assets.RegisterRouting(e)
 	health.RegisterRouting(e)
+	localnetwork.RegisterRouting(e)
 	if !effectiveFlags.EnableEditor {
 		editor.RegisterAssetRouting(e)
 	}

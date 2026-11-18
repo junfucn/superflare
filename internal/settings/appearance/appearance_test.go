@@ -324,8 +324,8 @@ func TestUpdateAppearanceOptionsPersistsHideWarningsButton(t *testing.T) {
 	if err := updateAppearanceOptions(c); err != nil {
 		t.Fatalf("updateAppearanceOptions: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, "config.yml"))
@@ -364,8 +364,8 @@ func TestUpdateAppearanceOptionsPersistsAndBindsFavoritesSettings(t *testing.T) 
 	if err := updateAppearanceOptions(c); err != nil {
 		t.Fatalf("updateAppearanceOptions: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 
 	options, err := data.GetAllSettingsOptions()

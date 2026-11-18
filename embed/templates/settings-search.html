@@ -66,8 +66,11 @@
 
         <div class="form-group">
             <label for="search-engine-custom-template">{{ T .Locale "search_engine_custom_template" }}</label>
-            <input class="option-input" type="text" name="search-engine-custom-template" id="search-engine-custom-template" value="{{ .SearchEngineCustomTemplate }}" placeholder="{{ T .Locale "search_engine_custom_template_placeholder" }}" />
-            <p class="help-text">{{ T .Locale "search_engine_custom_template_help" }}</p>
+            <input class="option-input" type="text" name="search-engine-custom-template" id="search-engine-custom-template" value="{{ .SearchEngineCustomTemplate }}" placeholder="{{ T .Locale "search_engine_custom_template_placeholder" }}" aria-describedby="search-template-help{{ if .SearchEngineCustomTemplateInvalid }} search-template-error{{ end }}"{{ if .SearchEngineCustomTemplateInvalid }} aria-invalid="true"{{ end }} />
+            <p class="help-text" id="search-template-help">{{ T .Locale "search_engine_custom_template_help" }}</p>
+            {{ if .SearchEngineCustomTemplateInvalid }}
+            <p class="form-error" id="search-template-error" role="alert">{{ T .Locale "search_engine_custom_template_invalid" }}</p>
+            {{ end }}
         </div>
 
         <div class="form-group">

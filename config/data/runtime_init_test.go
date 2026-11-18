@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestEnsureRuntimeDataFilesCreatesMissingFiles(t *testing.T) {
@@ -69,5 +72,62 @@ func TestEnsureAppConfigExistsCreatesMissingFile(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatal("config.yml should match repository defaults")
+	}
+}
+
+func TestInitializationWaitsForConfigReplacement(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		init func() error
+	}{
+		{"config.yml", EnsureAppConfigExists},
+		{"apps.yml", EnsureRuntimeDataFiles},
+		{"bookmarks.yml", EnsureRuntimeDataFiles},
+		{"ports.yaml", EnsureRuntimeDataFiles},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, EnsureAppConfigExists())
+			require.NoError(t, EnsureRuntimeDataFiles())
+			original := []byte("# existing operator configuration\n")
+			require.NoError(t, os.WriteFile(tc.file, original, 0600))
+			done := make(chan error, 1)
+			observedGap := make(chan struct{}, 1)
+			originalStat := osStat
+			osStat = func(path string) (os.FileInfo, error) {
+				info, err := originalStat(path)
+				if filepath.Base(path) == tc.file && os.IsNotExist(err) {
+					select {
+					case observedGap <- struct{}{}:
+					default:
+					}
+				}
+				return info, err
+			}
+			defer func() { osStat = originalStat }()
+			checkedDuringWrite := false
+			require.NoError(t, withConfigWriteLock(func() error {
+				if err := os.Rename(tc.file, tc.file+".backup"); err != nil {
+					return err
+				}
+				go func() { done <- tc.init() }()
+				select {
+				case <-observedGap:
+					checkedDuringWrite = true
+				case <-time.After(50 * time.Millisecond):
+				}
+				return os.Rename(tc.file+".backup", tc.file)
+			}))
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("initialization did not finish after the writer released its lock")
+			}
+			require.False(t, checkedDuringWrite, "initialization inspected the temporary replacement gap")
+			got, err := os.ReadFile(tc.file)
+			require.NoError(t, err)
+			require.Equal(t, original, got)
+		})
 	}
 }

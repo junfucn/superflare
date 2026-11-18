@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/stretchr/testify/assert"
@@ -221,6 +222,7 @@ func TestNewRouter_LoginDisabledBlocksSensitiveSettingsRoutes(t *testing.T) {
 		{name: "page", method: http.MethodGet, path: define.SettingPages.Ports.Path},
 		{name: "data", method: http.MethodGet, path: define.SettingPages.Ports.Path + "/data"},
 		{name: "save", method: http.MethodPost, path: define.SettingPages.Ports.Path, body: "ports=[]"},
+		{name: "collection", method: http.MethodPost, path: define.SettingPages.Ports.Path + "/collection", body: "enabled=true"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
@@ -437,8 +439,9 @@ func TestNewRouter_SiteIconProxyFallbacksToBuiltinBookmarkIcon(t *testing.T) {
 	handler, err := NewRouter(&flags)
 	require.NoError(t, err)
 	require.NotNil(t, handler)
+	require.NoError(t, data.SaveFavoriteBookmarks(model.Bookmarks{Items: []model.Bookmark{{Name: "Test", URL: "https://example.invalid/"}}}))
 
-	req := httptest.NewRequest(http.MethodGet, "/assets/site-icons?src=https://example.com/favicon.ico", nil)
+	req := httptest.NewRequest(http.MethodGet, "/assets/site-icons?src=https://example.invalid/favicon.ico", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

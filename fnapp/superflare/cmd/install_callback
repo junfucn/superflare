@@ -24,7 +24,7 @@ if [ "${had_existing_config}" = "true" ]; then
     exit 0
 fi
 
-user="$(printf '%s' "${wizard_install_login_user:-}" | tr -d '\r' | xargs)"
+user="$(trim_value "${wizard_install_login_user:-}")"
 pass="$(printf '%s' "${wizard_install_login_pass:-}" | tr -d '\r')"
 confirm="$(printf '%s' "${wizard_install_login_pass_confirm:-}" | tr -d '\r')"
 

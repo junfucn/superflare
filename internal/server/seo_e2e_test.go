@@ -1,12 +1,15 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/junfuchang/superflare/config/data"
+	"github.com/junfuchang/superflare/config/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +27,7 @@ func seoGet(t *testing.T, h http.Handler, path string) (int, string, http.Header
 func TestNewRouter_SEODiscoveryEndpointsAndHeadTags(t *testing.T) {
 	withRouterTestWorkingDir(t)
 
-	flags := newTestFlags(true, "DEFAULT", false)
+	flags := newTestFlags(false, "DEFAULT", false)
 	handler, err := NewRouter(&flags)
 	require.NoError(t, err)
 
@@ -146,6 +149,26 @@ func TestNewRouter_SEOPrivateInstanceHidesProtectedPages(t *testing.T) {
 	assert.Contains(t, home, `<meta name="robots" content="noindex, nofollow">`)
 }
 
+func TestNewRouter_SEOLoginDisabledDoesNotAdvertisePrivateItems(t *testing.T) {
+	withRouterTestWorkingDir(t)
+	flags := newTestFlags(true, "DEFAULT", false)
+	handler, err := NewRouter(&flags)
+	require.NoError(t, err)
+	for _, path := range []string{"/", "/applications", "/bookmarks", "/help"} {
+		code, body, _ := seoGet(t, handler, path)
+		require.Equal(t, http.StatusOK, code)
+		assert.Contains(t, body, `<meta name="robots" content="noindex, nofollow">`)
+	}
+	_, robots, _ := seoGet(t, handler, "/robots.txt")
+	assert.Contains(t, robots, "Disallow: /\n")
+	assert.NotContains(t, robots, "Allow: /")
+	for _, path := range []string{"/sitemap.xml", "/llms.txt"} {
+		_, body, _ := seoGet(t, handler, path)
+		assert.NotContains(t, body, "/applications")
+		assert.NotContains(t, body, "/bookmarks")
+	}
+}
+
 func TestNewRouter_SEOHeadRespectsConfiguredSiteURL(t *testing.T) {
 	withRouterTestWorkingDir(t)
 
@@ -160,6 +183,49 @@ func TestNewRouter_SEOHeadRespectsConfiguredSiteURL(t *testing.T) {
 	_, body, _ := seoGet(t, handler, "/")
 	assert.Contains(t, body, `<link rel="canonical" href="https://flare.example.com/">`)
 	assert.Contains(t, body, `<meta property="og:url" content="https://flare.example.com/">`)
+}
+
+func TestNewRouter_SEOHomeIncludesOnlyDisplayedBookmarks(t *testing.T) {
+	for _, tc := range []struct {
+		showBookmarks bool
+		showFavorites bool
+	}{
+		{false, false},
+		{false, true},
+		{true, false},
+		{true, true},
+	} {
+		t.Run(fmt.Sprintf("bookmarks=%t/favorites=%t", tc.showBookmarks, tc.showFavorites), func(t *testing.T) {
+			withRouterTestWorkingDir(t)
+			require.NoError(t, writeTestAppConfig(fmt.Sprintf("Title: SuperFlare\nTheme: white\nLocale: en\nShowApps: false\nShowBookmarks: %t\nShowFavorites: %t\n", tc.showBookmarks, tc.showFavorites)))
+			flags := newTestFlags(false, "DEFAULT", false)
+			handler, err := NewRouter(&flags)
+			require.NoError(t, err)
+			require.NoError(t, data.SaveNormalBookmarks(model.Bookmarks{Items: []model.Bookmark{
+				{Name: "VisibleFavorite", URL: "https://favorite.example/", Desc: "favorite-details", Favorite: true},
+				{Name: "RegularBookmark", URL: "https://regular.example/", Desc: "regular-details"},
+				{Name: "PrivateBookmark", URL: "https://private.example/", Desc: "private-details", Favorite: true, Private: true},
+			}}))
+			code, body, _ := seoGet(t, handler, "/")
+			require.Equal(t, http.StatusOK, code, body)
+			for _, item := range []struct {
+				visible bool
+				tokens  []string
+			}{
+				{tc.showBookmarks || tc.showFavorites, []string{"VisibleFavorite", "https://favorite.example/", "favorite-details"}},
+				{tc.showBookmarks, []string{"RegularBookmark", "https://regular.example/", "regular-details"}},
+				{false, []string{"PrivateBookmark", "https://private.example/", "private-details"}},
+			} {
+				for _, token := range item.tokens {
+					if item.visible {
+						assert.Contains(t, body, token)
+					} else {
+						assert.NotContains(t, body, token, "hidden bookmarks must not be exposed through JSON-LD")
+					}
+				}
+			}
+		})
+	}
 }
 
 func writeTestAppConfig(raw string) error {

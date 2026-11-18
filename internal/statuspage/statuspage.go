@@ -89,9 +89,8 @@ func RequireConfiguredBodyStyle() (template.CSS, error) {
 
 func RequireConfiguredBodyStyleForRender(locale string, scope string) (template.CSS, string, error) {
 	style := strings.TrimSpace(string(getAppBodyStyle()))
-	if style != "" {
-		return template.CSS(style), "", nil
-	}
+	wasEmpty := style == ""
+	// Settings may have changed directly on disk since the last page render.
 	if err := updatePagePalette(); err != nil {
 		return "", "", fmt.Errorf("refresh page theme cache failed: %w", err)
 	}
@@ -99,7 +98,10 @@ func RequireConfiguredBodyStyleForRender(locale string, scope string) (template.
 	if style == "" {
 		return "", "", fmt.Errorf("page theme cache is empty after refresh")
 	}
-	return template.CSS(style), formatBodyStyleRecoveryIssue(locale, scope), nil
+	if wasEmpty {
+		return template.CSS(style), formatBodyStyleRecoveryIssue(locale, scope), nil
+	}
+	return template.CSS(style), "", nil
 }
 
 func ValidatePageRenderOptions(options model.Application) error {

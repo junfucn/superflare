@@ -1,28 +1,69 @@
-{{ define "settings-ports.html" }}<div class="setting-group-container"><form method="POST" action="{{ .SettingPages.Ports.Path }}" id="form-ports"><h2>{{ T .Locale "settings_ports" }}</h2><div class="form-group"><p class="help-text">{{ T .Locale "ports_help" }}</div><div class="form-group ports-actions"><input class="btn-submit" type="button" value='{{ T .Locale "refresh_ports" }}' id="refresh-ports">
+{{ define "settings-ports.html" }}<div class="setting-group-container"><h2>{{ T .Locale "settings_ports" }}</h2><form method="POST" action="{{ .PortCollectionURI }}" id="form-port-collection"><div class="form-group"><p class="help-text">{{ T .Locale "ports_help" }}</div><div class="form-group ports-actions port-collection-actions"><label class="ports-toggle"><input type="checkbox" name="enabled" value="true"{{ if .PortCollectionEnabled }} checked{{ end }}>
+{{ T .Locale "enable_port_collection" }}
+</label><input class="btn-submit" type="submit" value='{{ T .Locale "save_changes" }}'></div></form><form method="POST" action="{{ .SettingPages.Ports.Path }}" id="form-ports"><div class="form-group ports-actions"><input class="btn-submit" type="button" value='{{ T .Locale "refresh_ports" }}' id="refresh-ports">
 <input class="btn-submit" type="button" value='{{ T .Locale "hide_all_ports" }}' id="hide-all-ports">
 <input class="btn-submit" type="button" value='{{ T .Locale "unhide_all_ports" }}' id="unhide-all-ports">
-<input class="btn-submit" type="submit" value='{{ T .Locale "save_changes" }}'>
+<input class="btn-submit" type="submit" value='{{ T .Locale "save_changes" }}' disabled>
 <label class="ports-toggle"><input type="checkbox" id="show-hidden-ports">
 {{ T .Locale "show_hidden_ports" }}
-</label><input type="hidden" name="ports" id="field-ports"></div><div id="ports-status" class="ports-status"></div><div class="ports-table-shell"><div id="container-ports"></div></div></form><script type="text/html" id="data-ports">{{.PortsData}}</script><style>.setting-group-container{--ports-table-surface:rgba(18, 18, 18, 0.97);--ports-table-surface-strong:rgba(28, 28, 28, 0.99);--ports-table-border:rgba(255, 253, 234, 0.14);--ports-table-text:rgba(239, 251, 255, 0.96);--ports-table-text-muted:rgba(239, 251, 255, 0.72);--ports-table-input-surface:rgba(239, 251, 255, 0.96);--ports-table-input-text:#171717;--ports-table-accent:rgba(255, 165, 0, 0.24);--ports-table-danger:rgba(122, 38, 38, 0.62)}.ports-toggle{display:inline-flex;align-items:center;gap:6px;margin:6px 0 6px 12px;color:var(--color-primary);font-weight:500}.ports-toggle input{accent-color:color-mix(in srgb,var(--color-accent) 78%,var(--color-primary) 22%)}.ports-status{min-height:24px;display:flex;align-items:center;gap:8px;color:color-mix(in srgb,var(--color-primary) 84%,transparent);opacity:.86}.ports-status.loading::before{content:"";width:13px;height:13px;border:2px solid color-mix(in srgb,var(--color-primary) 18%,transparent);border-top-color:color-mix(in srgb,var(--color-primary) 84%,transparent);border-radius:50%;animation:ports-spin .8s linear infinite}.ports-status.error{color:#a73636}.ports-status.warning{color:color-mix(in srgb,var(--color-accent) 84%,var(--color-primary) 16%)}.ports-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}.ports-actions .btn-submit{margin:0!important}.ports-actions .ports-toggle{margin:0 0 0 auto}.ports-table-shell{margin-top:8px;border:1px solid var(--ports-table-border);background:var(--ports-table-surface);min-height:160px;overflow:hidden}#container-ports,#container-ports .handsontable,#container-ports .handsontable .wtHolder,#container-ports .handsontable .wtHider,#container-ports .handsontable .wtSpreader,#container-ports .handsontable .ht_master,#container-ports .handsontable .ht_clone_top,#container-ports .handsontable .ht_clone_left,#container-ports .handsontable .ht_clone_top_left_corner{background:var(--ports-table-surface)!important;color:var(--ports-table-text)!important}#container-ports .handsontable table,#container-ports .handsontable .htCore{background:var(--ports-table-surface)!important;color:var(--ports-table-text)!important}#container-ports .handsontable col.rowHeader{background:var(--ports-table-surface-strong)!important}#container-ports .handsontable th,#container-ports .handsontable td,#container-ports .handsontable .htCore th,#container-ports .handsontable .htCore td{border-color:var(--ports-table-border)!important;color:var(--ports-table-text)!important}#container-ports .handsontable thead th,#container-ports .handsontable .ht_clone_top th,#container-ports .handsontable .ht_clone_left th,#container-ports .handsontable .ht_clone_top_left_corner th,#container-ports .handsontable th.ht__row_header,#container-ports .handsontable th.ht__column_header{background:var(--ports-table-surface-strong)!important;color:var(--ports-table-text)!important;font-weight:600}#container-ports .handsontable tbody th,#container-ports .handsontable tbody th:first-child,#container-ports .handsontable .ht_clone_left th,#container-ports .handsontable .ht_clone_top_left_corner th{background:var(--ports-table-surface-strong)!important;color:var(--ports-table-text)!important;font-weight:600;border-right-color:var(--ports-table-border)!important}#container-ports .handsontable tbody th .relative,#container-ports .handsontable tbody th:first-child .relative,#container-ports .handsontable tbody th .rowHeader,#container-ports .handsontable tbody th:first-child .rowHeader,#container-ports .handsontable .ht_clone_left th .relative,#container-ports .handsontable .ht_clone_left th .rowHeader{background:0 0!important;color:inherit!important}#container-ports .handsontable thead th .relative,#container-ports .handsontable .ht_clone_top th .relative,#container-ports .handsontable .ht_clone_top_left_corner th .relative,#container-ports .handsontable thead th .colHeader,#container-ports .handsontable .ht_clone_top th .colHeader,#container-ports .handsontable .ht_clone_top_left_corner th .colHeader,#container-ports .handsontable thead th .cornerHeader,#container-ports .handsontable .ht_clone_top th .cornerHeader,#container-ports .handsontable .ht_clone_top_left_corner th .cornerHeader{background:0 0!important;color:inherit!important}#container-ports .handsontable td{background:var(--ports-table-surface)!important}#container-ports .handsontable .htDimmed,#container-ports .handsontable .htAutocompleteArrow{color:var(--ports-table-text-muted)!important}#container-ports .handsontableInput{background:var(--ports-table-input-surface)!important;color:var(--ports-table-input-text)!important;border-color:rgba(255,253,234,.3)!important}#container-ports .htSelectEditor,#container-ports .htNumericInput{background:var(--ports-table-input-surface)!important;color:var(--ports-table-input-text)!important;border-color:rgba(255,253,234,.3)!important}@keyframes ports-spin{to{transform:rotate(360deg)}}@media(max-width:720px){.ports-actions .ports-toggle{margin-left:0;width:100%}}</style><script>(function () {
+</label><input type="hidden" name="ports" id="field-ports"></div><div id="ports-status" class="ports-status" role="status"></div><div class="ports-table-shell"><div id="container-ports"></div></div></form><script type="text/html" id="data-ports">{{.PortsData}}</script><style>.setting-group-container{--ports-table-surface:rgba(18, 18, 18, 0.97);--ports-table-surface-strong:rgba(28, 28, 28, 0.99);--ports-table-border:rgba(255, 253, 234, 0.14);--ports-table-text:rgba(239, 251, 255, 0.96);--ports-table-text-muted:rgba(239, 251, 255, 0.72);--ports-table-input-surface:rgba(239, 251, 255, 0.96);--ports-table-input-text:#171717;--ports-table-accent:rgba(255, 165, 0, 0.24);--ports-table-danger:rgba(122, 38, 38, 0.62)}.ports-toggle{display:inline-flex;align-items:center;gap:6px;margin:6px 0 6px 12px;color:var(--color-primary);font-weight:500}.ports-toggle input{accent-color:color-mix(in srgb,var(--color-accent) 78%,var(--color-primary) 22%)}.ports-status{min-height:24px;display:flex;align-items:center;gap:8px;color:color-mix(in srgb,var(--color-primary) 84%,transparent);opacity:.86}.ports-status.loading::before{content:"";width:13px;height:13px;border:2px solid color-mix(in srgb,var(--color-primary) 18%,transparent);border-top-color:color-mix(in srgb,var(--color-primary) 84%,transparent);border-radius:50%;animation:ports-spin .8s linear infinite}.ports-status.error{color:color-mix(in srgb,#d83838 65%,var(--color-primary) 35%)}.ports-status.warning{color:color-mix(in srgb,var(--color-accent) 84%,var(--color-primary) 16%)}.ports-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}.ports-actions .btn-submit{margin:0!important}.ports-actions .ports-toggle{margin:0 0 0 auto}.port-collection-actions .ports-toggle{margin:0}.ports-table-shell{margin-top:8px;border:1px solid var(--ports-table-border);background:var(--ports-table-surface);min-height:160px;overflow:hidden}#container-ports,#container-ports .handsontable,#container-ports .handsontable .wtHolder,#container-ports .handsontable .wtHider,#container-ports .handsontable .wtSpreader,#container-ports .handsontable .ht_master,#container-ports .handsontable .ht_clone_top,#container-ports .handsontable .ht_clone_left,#container-ports .handsontable .ht_clone_top_left_corner{background:var(--ports-table-surface)!important;color:var(--ports-table-text)!important}#container-ports .handsontable table,#container-ports .handsontable .htCore{background:var(--ports-table-surface)!important;color:var(--ports-table-text)!important}#container-ports .handsontable col.rowHeader{background:var(--ports-table-surface-strong)!important}#container-ports .handsontable th,#container-ports .handsontable td,#container-ports .handsontable .htCore th,#container-ports .handsontable .htCore td{border-color:var(--ports-table-border)!important;color:var(--ports-table-text)!important}#container-ports .handsontable thead th,#container-ports .handsontable .ht_clone_top th,#container-ports .handsontable .ht_clone_left th,#container-ports .handsontable .ht_clone_top_left_corner th,#container-ports .handsontable th.ht__row_header,#container-ports .handsontable th.ht__column_header{background:var(--ports-table-surface-strong)!important;color:var(--ports-table-text)!important;font-weight:600}#container-ports .handsontable tbody th,#container-ports .handsontable tbody th:first-child,#container-ports .handsontable .ht_clone_left th,#container-ports .handsontable .ht_clone_top_left_corner th{background:var(--ports-table-surface-strong)!important;color:var(--ports-table-text)!important;font-weight:600;border-right-color:var(--ports-table-border)!important}#container-ports .handsontable tbody th .relative,#container-ports .handsontable tbody th:first-child .relative,#container-ports .handsontable tbody th .rowHeader,#container-ports .handsontable tbody th:first-child .rowHeader,#container-ports .handsontable .ht_clone_left th .relative,#container-ports .handsontable .ht_clone_left th .rowHeader{background:0 0!important;color:inherit!important}#container-ports .handsontable thead th .relative,#container-ports .handsontable .ht_clone_top th .relative,#container-ports .handsontable .ht_clone_top_left_corner th .relative,#container-ports .handsontable thead th .colHeader,#container-ports .handsontable .ht_clone_top th .colHeader,#container-ports .handsontable .ht_clone_top_left_corner th .colHeader,#container-ports .handsontable thead th .cornerHeader,#container-ports .handsontable .ht_clone_top th .cornerHeader,#container-ports .handsontable .ht_clone_top_left_corner th .cornerHeader{background:0 0!important;color:inherit!important}#container-ports .handsontable td{background:var(--ports-table-surface)!important}#container-ports .handsontable .htDimmed,#container-ports .handsontable .htAutocompleteArrow{color:var(--ports-table-text-muted)!important}#container-ports .handsontableInput{background:var(--ports-table-input-surface)!important;color:var(--ports-table-input-text)!important;border-color:rgba(255,253,234,.3)!important}#container-ports .htSelectEditor,#container-ports .htNumericInput{background:var(--ports-table-input-surface)!important;color:var(--ports-table-input-text)!important;border-color:rgba(255,253,234,.3)!important}@keyframes ports-spin{to{transform:rotate(360deg)}}@media(max-width:720px){.ports-actions .ports-toggle{margin-left:0;width:100%}}</style><script>(function () {
 const locale = '{{.Locale}}' === 'en' ? 'en-US' : 'zh-CN';
 const dataURI = '{{.PortsDataURI}}';
 const form = document.getElementById('form-ports');
+const collectionForm = document.getElementById('form-port-collection');
 const fieldPorts = document.getElementById('field-ports');
 const status = document.getElementById('ports-status');
+const collectionSaveButton = collectionForm.querySelector('input[type="submit"]');
 const showHidden = document.getElementById('show-hidden-ports');
 const hideAllButton = document.getElementById('hide-all-ports');
 const unhideAllButton = document.getElementById('unhide-all-ports');
+const saveButton = form.querySelector('input[type="submit"]');
+const refreshButton = document.getElementById('refresh-ports');
+const tableContainer = document.getElementById('container-ports');
 const initialData = JSON.parse(document.getElementById('data-ports').textContent || '[]');
-function normalizeData(items) {
+let portsLoaded = false;
+let portsBusy = false;
+let portSaveInFlight = false;
+let portRows = [];
+let savedPortEdits = '';
+let portRevision = '';
+let allowPortNavigation = false;
+function portKey(item) {
+return item.Protocol + ':' + item.Port;
+}
+function capturePortEdits() {
+const editor = hot.getActiveEditor();
+if (editor && editor.isOpened()) {
+editor.finishEditing(false);
+}
+const visible = new Map(hot.getSourceData().map(function (item) { return [portKey(item), item]; }));
+portRows.forEach(function (item) {
+const edited = visible.get(portKey(item));
+if (edited) {
+item.Hidden = !!edited.Hidden;
+item.Remark = edited.Remark == null ? '' : String(edited.Remark);
+}
+});
+}
+function portEditSnapshot() {
+return JSON.stringify(portRows.map(function (item) { return [portKey(item), item.Hidden, item.Remark]; }));
+}
+function renderPortRows() {
+hot.loadData(portRows.filter(function (item) {
+return showHidden.checked || !item.Hidden;
+}).map(function (item) { return Object.assign({}, item); }));
+}
+function normalizeData(items, collectionEnabled) {
 return (items || []).map(function (item) {
+const running = collectionEnabled !== false && !!item.Running;
 return {
 Port: item.Port || '',
 Protocol: item.Protocol || 'tcp',
-ServiceName: item.Running ? (item.ServiceName || '') : '',
-RunningText: item.Running ? '{{ T .Locale "port_running" }}' : '{{ T .Locale "port_stopped" }}',
-Running: !!item.Running,
-PID: item.Running ? (item.PID || '') : '',
+ServiceName: running ? (item.ServiceName || '') : '',
+RunningText: collectionEnabled === false ? '{{ T .Locale "port_not_collected" }}'
+: (running ? '{{ T .Locale "port_running" }}' : '{{ T .Locale "port_stopped" }}'),
+Running: running,
+PID: running ? (item.PID || '') : '',
 Hidden: !!item.Hidden,
 Remark: item.Remark || ''
 };
@@ -35,31 +76,31 @@ status.className = 'ports-status'
 + (error ? ' error' : '')
 + (warning ? ' warning' : '');
 }
-function parseFailureResponse(response, fallbackMessage) {
-return response.text().then(function (raw) {
-if (!raw) {
-return fallbackMessage;
+async function readPortsResponse(response) {
+if (response.redirected || response.status === 401) {
+throw new Error('{{ T .Locale "ports_session_expired" }}');
 }
+let payload;
 try {
-const payload = JSON.parse(raw);
-const detail = payload && payload.detail ? String(payload.detail).trim() : '';
-const message = payload && payload.error ? String(payload.error).trim() : fallbackMessage;
-return detail ? (message + ': ' + detail) : message;
+payload = await response.json();
 } catch (error) {
-return raw.trim() || fallbackMessage;
+if (response.ok) {
+throw new Error('{{ T .Locale "ports_invalid_response" }}');
 }
-}).then(function (message) {
-throw new Error(message || fallbackMessage);
-});
 }
-function extractItems(payload) {
-if (Array.isArray(payload)) {
+if (!response.ok) {
+const message = payload && typeof payload.error === 'string' ? payload.error : '';
+const detail = payload && typeof payload.detail === 'string' ? payload.detail : '';
+throw new Error([message, detail].filter(Boolean).join(': '));
+}
 return payload;
 }
-if (payload && Array.isArray(payload.items)) {
+function extractItems(payload) {
+if (payload && payload.ok === true && Array.isArray(payload.items)
+&& typeof payload.revision === 'string' && payload.revision) {
 return payload.items;
 }
-return [];
+throw new Error('{{ T .Locale "ports_invalid_response" }}');
 }
 function extractWarnings(payload) {
 if (!payload || !Array.isArray(payload.warnings)) {
@@ -70,13 +111,13 @@ return String(item || '').trim();
 }).filter(Boolean);
 }
 function setHiddenStateForAll(nextHidden) {
-const data = hot.getSourceData().map(function (item) {
-return Object.assign({}, item, { Hidden: !!nextHidden });
-});
-hot.loadData(data);
+if (!portsLoaded || portsBusy) { return; }
+capturePortEdits();
+portRows.forEach(function (item) { item.Hidden = !!nextHidden; });
+renderPortRows();
 setStatus(nextHidden ? '{{ T .Locale "ports_all_hidden" }}' : '{{ T .Locale "ports_all_unhidden" }}', false, false, false);
 }
-const hot = new Handsontable(document.getElementById('container-ports'), {
+const hot = new Handsontable(tableContainer, {
 language: locale,
 data: normalizeData(initialData),
 colHeaders: [
@@ -104,35 +145,90 @@ stretchH: 'all',
 manualColumnResize: true,
 licenseKey: 'non-commercial-and-evaluation'
 });
-function loadPorts() {
-const query = showHidden.checked ? '?includeHidden=1' : '';
-setStatus('{{ T .Locale "ports_loading" }}', true, false);
-return fetch(dataURI + query, { headers: { 'Accept': 'application/json' } })
-.then(function (response) {
-if (!response.ok) {
-return parseFailureResponse(response, 'ports request failed');
+if (window.ResizeObserver) {
+const tableObserver = new ResizeObserver(function () { hot.refreshDimensions(); });
+tableObserver.observe(tableContainer);
+} else {
+window.addEventListener('resize', function () { hot.refreshDimensions(); });
 }
-return response.json();
-})
+function setPortsBusy(busy) {
+portsBusy = busy;
+const locked = busy || !portsLoaded;
+saveButton.disabled = locked;
+hideAllButton.disabled = locked;
+unhideAllButton.disabled = locked;
+refreshButton.disabled = busy;
+showHidden.disabled = busy;
+hot.updateSettings({ readOnly: locked });
+}
+function loadPorts(afterSave = false) {
+if (portsBusy) { return Promise.resolve(); }
+if (portsLoaded && !afterSave) {
+capturePortEdits();
+if (portEditSnapshot() !== savedPortEdits && !window.confirm('{{ if eq .Locale "en" }}Discard unsaved port changes and refresh?{{ else }}放弃未保存的端口修改并刷新？{{ end }}')) {
+return Promise.resolve();
+}
+}
+const savedNotice = afterSave ? '{{ T .Locale "ports_saved" }}' : '';
+const withSaveNotice = function (text) {
+return [savedNotice, text].filter(Boolean).join(' ');
+};
+setPortsBusy(true);
+setStatus(withSaveNotice('{{ T .Locale "ports_loading" }}'), true, false);
+return fetch(dataURI + '?includeHidden=1', { headers: { 'Accept': 'application/json' } })
+.then(readPortsResponse)
 .then(function (payload) {
 const items = extractItems(payload);
 const warnings = extractWarnings(payload);
-hot.loadData(normalizeData(items));
-if (warnings.length > 0) {
-setStatus(warnings.join(' '), false, false, true);
-return;
-}
-setStatus('', false, false, false);
+portRows = normalizeData(items, payload.collectionEnabled !== false);
+portRevision = payload.revision;
+savedPortEdits = portEditSnapshot();
+renderPortRows();
+portsLoaded = true;
+setStatus(withSaveNotice(warnings.join(' ')), false, false, warnings.length > 0);
 })
 .catch(function (error) {
 const detail = error && error.message ? error.message : '';
 const text = detail ? ('{{ T .Locale "ports_load_failed" }}: ' + detail) : '{{ T .Locale "ports_load_failed" }}';
-setStatus(text, false, true, false);
+setStatus(withSaveNotice(text), false, !afterSave, afterSave);
+}).finally(function () {
+setPortsBusy(false);
 });
 }
+collectionForm.addEventListener('submit', function (event) {
+if (collectionSaveButton.disabled) {
+event.preventDefault();
+return;
+}
+if (!portsLoaded) { allowPortNavigation = true; return; }
+capturePortEdits();
+if (portEditSnapshot() !== savedPortEdits && !window.confirm('{{ T .Locale "ports_discard_changes" }}')) {
+event.preventDefault();
+return;
+}
+allowPortNavigation = true;
+});
+window.addEventListener('beforeunload', function (event) {
+if (allowPortNavigation || !portsLoaded) { return; }
+const editor = hot.getActiveEditor();
+const activeDraft = editor && editor.isOpened()
+&& String(editor.getValue() == null ? '' : editor.getValue()) !== String(editor.originalValue == null ? '' : editor.originalValue);
+if (activeDraft || portSaveInFlight) {
+event.preventDefault();
+event.returnValue = true;
+return;
+}
+capturePortEdits();
+if (portEditSnapshot() !== savedPortEdits) {
+event.preventDefault();
+event.returnValue = true;
+}
+});
 form.addEventListener('submit', function (event) {
 event.preventDefault();
-const payload = hot.getSourceData().filter(function (item) {
+if (!portsLoaded || portsBusy) { return; }
+capturePortEdits();
+const payload = portRows.filter(function (item) {
 return item.Port && ((item.Remark || '').trim() || item.Hidden);
 }).map(function (item) {
 return {
@@ -143,10 +239,14 @@ Remark: (item.Remark || '').trim()
 };
 });
 fieldPorts.value = JSON.stringify(payload);
+collectionSaveButton.disabled = true;
+portSaveInFlight = true;
+setPortsBusy(true);
 setStatus('{{ T .Locale "ports_saving" }}', true, false, false);
 const body = new URLSearchParams();
 body.set('ports', fieldPorts.value);
-body.set('includeHidden', showHidden.checked ? '1' : '0');
+body.set('includeHidden', '1');
+body.set('revision', portRevision);
 fetch(form.action, {
 method: 'POST',
 headers: {
@@ -154,19 +254,26 @@ headers: {
 'Content-Type': 'application/x-www-form-urlencoded'
 },
 body: body.toString()
-}).then(function (response) {
-if (!response.ok) {
-return parseFailureResponse(response, 'save failed');
+}).then(readPortsResponse).then(function (result) {
+if (!result || result.ok !== true || typeof result.revision !== 'string' || !result.revision) {
+throw new Error('{{ T .Locale "ports_invalid_response" }}');
 }
-setStatus('{{ T .Locale "ports_saved" }}', false, false, false);
-return loadPorts();
+portRevision = result.revision;
+savedPortEdits = portEditSnapshot();
+portSaveInFlight = false;
+setPortsBusy(false);
+return loadPorts(true);
 }).catch(function (error) {
+setPortsBusy(false);
 const detail = error && error.message ? error.message : '';
 const text = detail ? ('{{ T .Locale "ports_save_failed" }}: ' + detail) : '{{ T .Locale "ports_save_failed" }}';
 setStatus(text, false, true, false);
+}).finally(function () {
+portSaveInFlight = false;
+collectionSaveButton.disabled = false;
 });
 });
-document.getElementById('refresh-ports').addEventListener('click', function () {
+refreshButton.addEventListener('click', function () {
 loadPorts();
 });
 hideAllButton.addEventListener('click', function () {
@@ -176,7 +283,9 @@ unhideAllButton.addEventListener('click', function () {
 setHiddenStateForAll(false);
 });
 showHidden.addEventListener('change', function () {
-loadPorts();
+if (!portsLoaded || portsBusy) { return; }
+capturePortEdits();
+renderPortRows();
 });
 loadPorts();
 }());</script></div>{{ end }}

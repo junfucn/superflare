@@ -535,9 +535,24 @@ func TestGetAllSettingsOptionsReturnsErrorWhenSEOSettingsInvalid(t *testing.T) {
 			want:    "invalid site url value: https://example.com/?a=1",
 		},
 		{
+			name:    "site url with userinfo",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSiteURL: https://user:password@example.com\n",
+			want:    "invalid site url value: https://user:password@example.com",
+		},
+		{
+			name:    "site url with out-of-range port",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSiteURL: https://example.com:65536\n",
+			want:    "invalid site url value: https://example.com:65536",
+		},
+		{
 			name:    "seo image not a url",
 			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSEOImage: not-a-url\n",
 			want:    "invalid seo image value: not-a-url",
+		},
+		{
+			name:    "seo image protocol relative",
+			content: "Title: SuperFlare\nLocale: zh\nTheme: blackboard\nSEOImage: //images.example.com/cover.png\n",
+			want:    "invalid seo image value: //images.example.com/cover.png",
 		},
 		{
 			name:    "seo description too long",

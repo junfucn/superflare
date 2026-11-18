@@ -22,6 +22,8 @@ func TestEditorTemplateControlsAreNotBroken(t *testing.T) {
 		`id="editor-operation-notice-text"`,
 		`id="editor-operation-notice-close"`,
 		`id="editor-backup-download"`,
+		`id="editor-add-category"`,
+		`id="editor-add-bookmark"`,
 		`id="editor-restore-submit"`,
 		`runtime.js{{.DebugAssetVersion}}`,
 		`editor-page`,
@@ -34,11 +36,11 @@ func TestEditorTemplateControlsAreNotBroken(t *testing.T) {
 		`\u5b50\u76ee\u5f55`,
 		`type: 'autocomplete'`,
 		`remove_row`,
-		`local-url-empty`,
+		`editor.finishEditing(false);`,
 		`editor-validation-error`,
 		`--editor-table-surface`,
 		`superflare-editor-theme`,
-		`body{--editor-page-background:#14181d;`,
+		`--editor-page-background:#14181d;`,
 		`data-editor-theme`,
 		`function parseEditorJSONFailure(response, fallbackMessage)`,
 		`function summarizeEditorErrorMessage(message, fallbackMessage)`,
@@ -48,13 +50,14 @@ func TestEditorTemplateControlsAreNotBroken(t *testing.T) {
 		`function getExportableBookmarkRows()`,
 		`function focusEditorValidationCell(target)`,
 		`fetch(form.action || '/editor'`,
-		`行分类缺少名称`,
-		`行书签缺少`,
+		`editor_category_name_required`,
+		`editor_bookmark_name_required`,
+		`editor_bookmark_url_required`,
 		`function stripEditorNoticeQuery()`,
 		`function parseDownloadFilename(disposition)`,
-		`function replaceEditorDocumentWithHTML(html)`,
+		`async function requireEditorBackupSuccess(response)`,
 		`btn.title = detail;`,
-		`setButtonState(btn, 'editor-button-state-error', '\u68c0\u67e5\u5931\u8d25');`,
+		`setButtonState(btn, 'editor-button-state-error', editorMessages.checkFailed);`,
 		`backupSuccess`,
 		`restoreMissingFile`,
 		`saveRunning`,
@@ -77,6 +80,8 @@ func TestEditorTemplateControlsAreNotBroken(t *testing.T) {
 		`setButtonState(btn, 'editor-button-state-error', detail);`,
 		`document.getElementById('form-categories').submit()`,
 		`window.alert(`,
+		`document.open(`,
+		`document.write(`,
 	} {
 		if strings.Contains(page, broken) {
 			t.Fatalf("editor template contains broken marker %q", broken)
@@ -287,16 +292,21 @@ func TestEditorTemplateSynchronizesRowHeadersAndRefitsLinkChecks(t *testing.T) {
 		`nextRows.forEach(function (item, visualRow) {`,
 		`if (!isDeletedBookmarkRow(item)) {`,
 		`checkedVisualRows.push(visualRow);`,
-		`const checkedRow = Math.max(0, Number(result.row || 1) - 1);`,
+		`const checkedRow = Number(result.row) - 1;`,
+		`!Number.isInteger(checkedRow) || checkedRow < 0`,
 		`const visualRow = checkedVisualRows[checkedRow];`,
+		`normalizeEditorText(rowData.URL) !== normalizeEditorText(result.url)`,
 		`const BOOKMARK_CONTEXT_MENU_ITEMS = [`,
 		`function setBookmarkTableLinkCheckLocked(locked) {`,
 		`readOnly: locked,`,
 		`manualRowMove: !locked,`,
 		`contextMenu: locked ? false : BOOKMARK_CONTEXT_MENU_ITEMS`,
 		`setBookmarkTableLinkCheckLocked(true);`,
-		`}).finally(function () {`,
+		`} finally {`,
 		`setBookmarkTableLinkCheckLocked(false);`,
+		`if (settings.readOnly) { return; }`,
+		`guardEditorHistoryReplay(instanceCategories);`,
+		`guardEditorHistoryReplay(instanceBookmarks);`,
 	} {
 		if !strings.Contains(page, expected) {
 			t.Fatalf("editor template missing row-header synchronization %q", expected)
@@ -304,7 +314,7 @@ func TestEditorTemplateSynchronizesRowHeadersAndRefitsLinkChecks(t *testing.T) {
 	}
 
 	linkCheckStart := strings.Index(page, `function applyLinkCheckResults(results) {`)
-	linkCheckEnd := strings.Index(page, `document.getElementById('back-home').addEventListener`)
+	linkCheckEnd := strings.Index(page, `checkLinksButton.addEventListener('click'`)
 	if linkCheckStart == -1 || linkCheckEnd == -1 || linkCheckEnd <= linkCheckStart {
 		t.Fatal("editor template missing link-check result block")
 	}
@@ -359,10 +369,12 @@ func TestEditorTemplateSupportsPrivateAndNormalBookmarkFavorites(t *testing.T) {
 		`{ data: 'Favorite', type: 'checkbox'`,
 		`item.Private ? 'true' : 'false'`,
 		`item.Favorite && item.Category !== FLARE_FIX_CATEGORY[0] ? 'true' : 'false'`,
+		`Category: FLARE_UNGROUPED_CATEGORY,`,
+		`normalizeEditorText(item.Category) || FLARE_UNGROUPED_CATEGORY`,
 		`prop === 'Favorite'`,
 		`this.instance.getSourceDataAtRow(row)`,
 		`FLARE_FIX_CATEGORY[0]`,
-		`setDataAtRowProp(row, 'Favorite', false`,
+		`instanceBookmarks.addHook('beforeChange', enforceApplicationFavoriteInvariant);`,
 	} {
 		if !strings.Contains(page, expected) {
 			t.Fatalf("editor template missing %q", expected)
@@ -370,7 +382,7 @@ func TestEditorTemplateSupportsPrivateAndNormalBookmarkFavorites(t *testing.T) {
 	}
 }
 
-func TestEditorTemplateReappliesApplicationFavoriteInvariantAfterUndo(t *testing.T) {
+func TestEditorTemplateBatchesApplicationFavoriteChanges(t *testing.T) {
 	raw, err := TPL.ReadFile("html/editor.html")
 	if err != nil {
 		t.Fatal(err)
@@ -378,15 +390,12 @@ func TestEditorTemplateReappliesApplicationFavoriteInvariantAfterUndo(t *testing
 	page := string(raw)
 
 	for _, expected := range []string{
-		`function enforceApplicationFavoriteInvariant(row) {`,
-		`instanceBookmarks.getDataAtRowProp(row, 'Category') === FLARE_FIX_CATEGORY[0]`,
-		`instanceBookmarks.getDataAtRowProp(row, 'Favorite') === true`,
-		`instanceBookmarks.setDataAtRowProp(row, 'Favorite', false, 'application-favorite-invariant');`,
-		`if (source !== 'application-favorite-invariant') {`,
-		`enforceApplicationFavoriteInvariant(row);`,
+		`function enforceApplicationFavoriteInvariant(changes) {`,
+		`changes.push([row, 'Favorite', next.favorite, false]);`,
+		`instanceBookmarks.addHook('beforeChange', enforceApplicationFavoriteInvariant);`,
 	} {
 		if !strings.Contains(page, expected) {
-			t.Fatalf("editor template missing undo-safe favorite invariant %q", expected)
+			t.Fatalf("editor template missing batched favorite invariant %q", expected)
 		}
 	}
 }
@@ -401,8 +410,9 @@ func TestEditorTemplateAppliesLinkCheckResultsInBatch(t *testing.T) {
 	for _, expected := range []string{
 		`function applyLinkCheckResults(results) {`,
 		`const nextRows = getVisualBookmarkRows();`,
-		`bookmarks = nextRows;`,
-		`instanceBookmarks.updateData(bookmarks);`,
+		`updateVisualBookmarkRows(nextRows);`,
+		`instanceBookmarks.toPhysicalRow(visualRow)`,
+		`instanceBookmarks.setSourceDataAtCell(changes, undefined, undefined, 'editor-derived')`,
 	} {
 		if !strings.Contains(page, expected) {
 			t.Fatalf("editor template missing %q", expected)
@@ -410,6 +420,9 @@ func TestEditorTemplateAppliesLinkCheckResultsInBatch(t *testing.T) {
 	}
 
 	for _, broken := range []string{
+		`instanceBookmarks.loadData(`,
+		`instanceBookmarks.updateData(bookmarks);`,
+		`bookmarks[rowIndex] = getBookmarkVisualRowData(rowIndex);`,
 		`instanceBookmarks.setDataAtRowProp(visualRow, 'CheckResult', checkResult, 'link-check-result');`,
 		`instanceBookmarks.setDataAtRowProp(visualRow, 'CheckStatus', result.status || 'invalid', 'link-check-result');`,
 	} {

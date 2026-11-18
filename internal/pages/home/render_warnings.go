@@ -7,11 +7,24 @@ import (
 	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/internal/background"
 	"github.com/junfuchang/superflare/internal/resources/mdi"
 )
 
 var loadFavoriteBookmarks = data.LoadFavoriteBookmarks
 var loadNormalBookmarks = data.LoadNormalBookmarks
+
+func resolveHomeAssetsForRender(options model.Application, warnings []string) (background.Assets, []string) {
+	assets, err := resolveHomeAssets(options)
+	if err == nil {
+		return assets, warnings
+	}
+	message := "Uploaded background is unavailable. Upload the image again in Settings; the theme background is being used for now."
+	if options.Locale != "en" {
+		message = "上传的背景图片不可用，当前已使用主题底色。请在设置中重新上传背景图片。"
+	}
+	return background.Assets{}, append(warnings, message)
+}
 
 func appendConfiguredIconWarnings(locale string, iconMode string, showApps bool, showBookmarks bool, warnings []string) []string {
 	iconMode = strings.ToUpper(strings.TrimSpace(iconMode))

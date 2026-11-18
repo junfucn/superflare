@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,7 +28,6 @@ import (
 	"time"
 
 	"github.com/junfuchang/superflare/internal/logger"
-	"github.com/junfuchang/superflare/internal/netutil"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 )
@@ -717,6 +717,7 @@ func WarmSiteFaviconURL(iconURL string) {
 		defer func() { <-siteIconWarmLimiter }()
 		ctx, cancel := context.WithTimeout(context.Background(), siteIconOverallTimeout)
 		defer cancel()
+		ctx = withSiteIconOrigin(ctx, iconURL)
 		_, _, _ = fetchAndCacheSiteFavicon(ctx, iconURL)
 	}()
 }
@@ -738,6 +739,7 @@ func FetchPublicSiteFaviconContext(ctx context.Context, iconURL string) ([]byte,
 	}
 	ctx, cancel := context.WithTimeout(ctx, siteIconOverallTimeout)
 	defer cancel()
+	ctx = withSiteIconOrigin(ctx, iconURL)
 	return fetchAndCacheSiteFavicon(ctx, iconURL)
 }
 
@@ -1218,6 +1220,12 @@ func validateSiteFaviconRedirect(req *http.Request, via []*http.Request) error {
 	if err := validateSiteFaviconSource(req.URL.String()); err != nil {
 		return fmt.Errorf("%w: %w", errSiteFaviconRedirectRejected, err)
 	}
+	ctx := req.Context()
+	if _, err := netip.ParseAddr(req.URL.Hostname()); err == nil || HostLooksLocalNetwork(req.URL.Hostname()) {
+		if err := validateSiteIconDestination(ctx, req.URL); err != nil {
+			return fmt.Errorf("%w: %w", errSiteFaviconRedirectRejected, err)
+		}
+	}
 	return nil
 }
 
@@ -1281,16 +1289,6 @@ func primaryHostedSiteFaviconHTTPClient() *http.Client {
 	client := *siteIconHTTPClient
 	client.CheckRedirect = validatePrimaryHostedSiteFaviconRedirect
 	return &client
-}
-
-func safeSiteFaviconTransport() http.RoundTripper {
-	dialer := &net.Dialer{Timeout: siteIconRequestTimeout}
-	return &http.Transport{
-		Proxy:                 netutil.ProxyFromEnvironmentOrSystem,
-		DialContext:           dialer.DialContext,
-		TLSHandshakeTimeout:   siteIconRequestTimeout,
-		ResponseHeaderTimeout: siteIconRequestTimeout,
-	}
 }
 
 func validateSiteFaviconSource(iconURL string) error {

@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/junfuchang/superflare/internal/netutil"
+	"github.com/junfuchang/superflare/internal/testutil"
 	"golang.org/x/image/bmp"
 )
 
@@ -919,14 +921,14 @@ func TestFetchPublicSiteFaviconAcceptsSVGWithTextPlainHeader(t *testing.T) {
 	}
 }
 
-func TestFetchPublicSiteFaviconAllowsRedirectToPrivateTarget(t *testing.T) {
+func TestFetchPublicSiteFaviconRejectsRedirectToUnconfiguredPrivateTarget(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/favicon.ico", nil)
 
 	err := validateSiteFaviconRedirect(req, []*http.Request{
 		httptest.NewRequest(http.MethodGet, "https://example.com/favicon.ico", nil),
 	})
-	if err != nil {
-		t.Fatalf("expected favicon redirect to private target to be allowed, got %v", err)
+	if err == nil {
+		t.Fatal("expected favicon redirect to unconfigured private target to be rejected")
 	}
 }
 
@@ -2355,6 +2357,16 @@ func TestWarmSiteFaviconURLLimitsGlobalConcurrentFetches(t *testing.T) {
 	defer func() { siteIconHTTPClient = oldClient }()
 
 	release := make(chan struct{})
+	defer func() {
+		close(release)
+		deadline := time.Now().Add(5 * time.Second)
+		for len(siteIconWarmLimiter) != 0 && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := len(siteIconWarmLimiter); got != 0 {
+			t.Errorf("expected favicon warmup workers to finish after release, active=%d", got)
+		}
+	}()
 	var active int32
 	var maxActive int32
 	siteIconHTTPClient = &http.Client{
@@ -2389,18 +2401,8 @@ func TestWarmSiteFaviconURLLimitsGlobalConcurrentFetches(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	close(release)
-
 	if got := atomic.LoadInt32(&maxActive); got > maxAllowedConcurrentWarmups {
 		t.Fatalf("expected favicon warmup concurrency <= %d, got %d", maxAllowedConcurrentWarmups, got)
-	}
-
-	waitDeadline := time.Now().Add(time.Second)
-	for atomic.LoadInt32(&active) != 0 && time.Now().Before(waitDeadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := atomic.LoadInt32(&active); got != 0 {
-		t.Fatalf("expected favicon warmup requests to finish after release, active=%d", got)
 	}
 }
 
@@ -2408,9 +2410,9 @@ func TestSafeSiteFaviconTransportUsesEnvironmentProxy(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9")
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9")
 
-	transport, ok := safeSiteFaviconTransport().(*http.Transport)
+	transport, ok := safeSiteFaviconTransport().(*netutil.PinnedTransport)
 	if !ok {
-		t.Fatalf("safeSiteFaviconTransport should return *http.Transport, got %T", safeSiteFaviconTransport())
+		t.Fatalf("safeSiteFaviconTransport should return pinned transport, got %T", safeSiteFaviconTransport())
 	}
 	if transport.Proxy == nil {
 		t.Fatal("safe site favicon transport should use environment proxy settings")
@@ -2428,12 +2430,25 @@ func TestFetchPublicSiteFaviconCanUseLocalEnvironmentProxy(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL == nil || r.URL.Host != "93.184.216.55" || r.URL.Path != "/favicon.ico" {
-			t.Fatalf("unexpected proxied favicon request URL: %v", r.URL)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.RequestURI != "/favicon.ico" || r.Host != "93.184.216.55" {
+			t.Error("original icon request changed")
+			w.WriteHeader(http.StatusBadGateway)
+			return
 		}
+		raw := `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
 		w.Header().Set("Content-Type", "image/svg+xml")
-		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`))
+		w.Header().Set("Content-Length", fmt.Sprint(len(raw)))
+		_, _ = io.WriteString(w, raw)
+	}))
+	defer origin.Close()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "93.184.216.55:80" {
+			t.Errorf("unexpected proxy destination: %s", r.Host)
+			http.Error(w, "unpinned destination", http.StatusBadGateway)
+			return
+		}
+		testutil.ForwardProxyTunnel(t, w, r, origin.Listener.Addr().String())
 	}))
 	defer proxy.Close()
 

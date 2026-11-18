@@ -1,2 +1,7 @@
 #!/bin/bash
-exit 0
+
+set -u
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/common.sh"
+stop_app

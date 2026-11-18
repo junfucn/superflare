@@ -10,11 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/junfuchang/superflare/config/data"
+	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/labstack/echo/v5"
 )
 
-func TestRequireConfiguredBodyStyleReturnsCachedStyle(t *testing.T) {
+func TestRequireConfiguredBodyStyleRefreshesNonemptyCache(t *testing.T) {
 	originalGet := getAppBodyStyle
 	originalUpdate := updatePagePalette
 	t.Cleanup(func() {
@@ -24,6 +26,9 @@ func TestRequireConfiguredBodyStyleReturnsCachedStyle(t *testing.T) {
 
 	updateCalled := false
 	getAppBodyStyle = func() template.CSS {
+		if updateCalled {
+			return template.CSS(`--color-background:#fff;--color-primary:#222;--color-accent:#ddd;`)
+		}
 		return template.CSS(`--color-background:#111;--color-primary:#eee;--color-accent:#f90;`)
 	}
 	updatePagePalette = func() error {
@@ -35,11 +40,45 @@ func TestRequireConfiguredBodyStyleReturnsCachedStyle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RequireConfiguredBodyStyle: %v", err)
 	}
-	if string(style) == "" {
-		t.Fatal("expected cached body style")
+	if !strings.Contains(string(style), "--color-background:#fff;") {
+		t.Fatalf("expected refreshed body style, got %q", style)
 	}
-	if updateCalled {
-		t.Fatal("did not expect palette refresh when cached style exists")
+	if !updateCalled {
+		t.Fatal("expected palette refresh even when cached style exists")
+	}
+}
+
+func TestRequireConfiguredBodyStyleFollowsExternalThemeEdits(t *testing.T) {
+	t.Chdir(t.TempDir())
+	previous := define.GetThemeRuntimeSnapshot()
+	t.Cleanup(func() { define.StoreThemeRuntimeSnapshot(previous) })
+	for _, tc := range []struct {
+		config string
+		style  string
+	}{
+		{"Theme: onedark\n", "--color-background:#282c34;--color-primary:#dfd9d6;--color-accent:#98c379;"},
+		{"Theme: white\n", "--color-background:#ffffff;--color-primary:#222222;--color-accent:#dddddd;"},
+		{"Theme: custom\nThemeBase: white\nCustomThemePrimary: '#123456'\n", "--color-background:#ffffff;--color-primary:#123456;--color-accent:#dddddd;"},
+		{"Theme: custom\nThemeBase: white\nCustomThemeBackground: '#111111'\nCustomThemePrimary: '#abcdef'\nCustomThemeAccent: '#987654'\n", "--color-background:#111111;--color-primary:#abcdef;--color-accent:#987654;"},
+		{"Theme: custom\nThemeBase: onedark\n", "--color-background:#282c34;--color-primary:#dfd9d6;--color-accent:#98c379;"},
+	} {
+		if err := os.WriteFile("config.yml", []byte(tc.config+"Locale: en\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		options, err := data.GetAllSettingsOptions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		style, warning, err := RequireConfiguredBodyStyleForRender("en", "home")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(style) != tc.style {
+			t.Fatalf("theme %q: got %q, want %q", tc.config, style, tc.style)
+		}
+		if options.Theme == "custom" && warning != "" {
+			t.Fatalf("changing a valid theme must not produce a recovery warning: %q", warning)
+		}
 	}
 }
 

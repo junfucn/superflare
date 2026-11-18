@@ -3,12 +3,32 @@ package data
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const configFileMode = 0644
+
+// ConfigFileMode caps credential files at owner-only permissions and never
+// grants permissions that an existing target did not have.
+func ConfigFileMode(filePath string) (os.FileMode, error) {
+	mode := os.FileMode(configFileMode)
+	switch strings.ToLower(filepath.Base(filePath)) {
+	case "config.yml", "config.yaml", ".env":
+		mode = 0600
+	}
+	info, err := osStat(filePath)
+	if err == nil {
+		return mode & info.Mode().Perm(), nil
+	}
+	if !os.IsNotExist(err) {
+		return 0, err
+	}
+	return mode, nil
+}
 
 var osRename = os.Rename
 var osStat = os.Stat
@@ -68,11 +88,71 @@ type pendingFileCommit struct {
 	backup string
 }
 
+// BackupConfigFile copies the original without making the live path disappear.
+// Callers must hold the config write lock until replacement or rollback ends.
+// A missing target has no backup and is removed again if its creation rolls back.
+func BackupConfigFile(target string) (string, error) {
+	source, err := os.Open(target)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("target path %s is a directory or non-regular file, cannot overwrite config", target)
+	}
+	mode, err := ConfigFileMode(target)
+	if err != nil {
+		return "", err
+	}
+	backup, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".backup-*")
+	if err != nil {
+		return "", err
+	}
+	complete := false
+	defer func() {
+		_ = backup.Close()
+		if !complete {
+			_ = os.Remove(backup.Name())
+		}
+	}()
+	if _, err := io.Copy(backup, source); err != nil {
+		return "", err
+	}
+	if err := backup.Chmod(mode); err != nil {
+		return "", err
+	}
+	if err := backup.Sync(); err != nil {
+		return "", err
+	}
+	if err := backup.Close(); err != nil {
+		return "", err
+	}
+	complete = true
+	return backup.Name(), nil
+}
+
 func saveFile(filePath string, data []byte) error {
 	return saveFilesAtomically(map[string][]byte{filePath: data})
 }
 
 func stagePendingFileCommit(filePath string, data []byte) (pendingFileCommit, error) {
+	switch name := strings.ToLower(filepath.Base(filePath)); name {
+	case "config.yml", "config.yaml", "apps.yml", "apps.yaml", "bookmarks.yml", "bookmarks.yaml", "ports.yml", "ports.yaml":
+		if err := ValidateConfigFileSize(name, data); err != nil {
+			return pendingFileCommit{}, err
+		}
+	}
+	mode, err := ConfigFileMode(filePath)
+	if err != nil {
+		return pendingFileCommit{}, err
+	}
 	dir := filepath.Dir(filePath)
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(filePath)+".tmp-*")
 	if err != nil {
@@ -88,7 +168,7 @@ func stagePendingFileCommit(filePath string, data []byte) (pendingFileCommit, er
 		cleanup()
 		return pendingFileCommit{}, fmt.Errorf("写入临时文件 %s 失败: %w", filePath, err)
 	}
-	if err := temp.Chmod(configFileMode); err != nil {
+	if err := temp.Chmod(mode); err != nil {
 		cleanup()
 		return pendingFileCommit{}, fmt.Errorf("设置临时文件权限 %s 失败: %w", filePath, err)
 	}
@@ -145,42 +225,14 @@ func saveFilesAtomicallyLocked(files map[string][]byte) error {
 
 	for index := range pending {
 		item := &pending[index]
-		if info, err := os.Stat(item.target); err == nil {
-			if info.IsDir() {
-				rollbackErr := rollbackPendingFileCommits(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(fmt.Errorf("目标路径 %s 是目录，不能作为配置文件覆盖", item.target), rollbackErr)
-				}
-				return fmt.Errorf("目标路径 %s 是目录，不能作为配置文件覆盖", item.target)
-			}
-			backup, err := os.CreateTemp(filepath.Dir(item.target), "."+filepath.Base(item.target)+".backup-*")
-			if err != nil {
-				rollbackErr := rollbackPendingFileCommits(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
-				}
-				return err
-			}
-			item.backup = backup.Name()
-			_ = backup.Close()
-			_ = os.Remove(item.backup)
-			if err := osRename(item.target, item.backup); err != nil {
-				rollbackErr := rollbackPendingFileCommits(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
-				}
-				return err
-			}
-		} else if !os.IsNotExist(err) {
-			rollbackErr := rollbackPendingFileCommits(pending, index-1)
-			if rollbackErr != nil {
-				return errors.Join(err, rollbackErr)
-			}
-			return err
+		var err error
+		item.backup, err = BackupConfigFile(item.target)
+		if err != nil {
+			return errors.Join(err, rollbackPendingFileCommits(pending, index-1))
 		}
 
 		if err := osRename(item.temp, item.target); err != nil {
-			rollbackErr := rollbackPendingFileCommits(pending, index)
+			rollbackErr := rollbackPendingFileCommits(pending, index-1)
 			if rollbackErr != nil {
 				return errors.Join(err, rollbackErr)
 			}
@@ -219,24 +271,21 @@ func rollbackPendingFileCommits(items []pendingFileCommit, appliedIndex int) err
 		}
 		if index > appliedIndex {
 			if item.backup != "" {
-				if err := osRename(item.backup, item.target); err != nil && !os.IsNotExist(err) {
+				if err := os.Remove(item.backup); err != nil && !os.IsNotExist(err) {
 					rollbackErr = errors.Join(rollbackErr, err)
 				}
 			}
 			continue
 		}
 
-		if _, err := os.Stat(item.target); err == nil {
-			if err := os.Remove(item.target); err != nil && !os.IsNotExist(err) {
-				rollbackErr = errors.Join(rollbackErr, err)
-				continue
-			}
-		}
 		if item.backup != "" {
-			if err := osRename(item.backup, item.target); err != nil && !os.IsNotExist(err) {
+			if err := osRename(item.backup, item.target); err != nil {
 				rollbackErr = errors.Join(rollbackErr, err)
 			}
+		} else if err := os.Remove(item.target); err != nil && !os.IsNotExist(err) {
+			rollbackErr = errors.Join(rollbackErr, err)
 		}
+		invalidateFileCachePath(item.target)
 	}
 	return rollbackErr
 }

@@ -43,6 +43,8 @@ const (
 	previewLongEdge              = 320
 	fullLongEdge                 = 2200
 	sourceMaxBytes         int64 = 32 << 20
+	maxDecodedPixels             = 16 * 1024 * 1024
+	backgroundProcessLimit       = 2
 	uploadedVariantVersion       = "2"
 )
 
@@ -71,12 +73,25 @@ var (
 		Transport:     safeBackgroundTransport(),
 		CheckRedirect: validateBackgroundRedirect,
 	}
-	inflight sync.Map
+	inflight    sync.Map
+	fetchSlots  = make(chan struct{}, backgroundProcessLimit)
+	decodeSlots = make(chan struct{}, backgroundProcessLimit)
+	warmSlots   = make(chan struct{}, backgroundProcessLimit)
+	uploadMu    sync.Mutex
 )
+
+// Keep uploads, backups and restores from sharing the staging directory.
+// Callers acquire this before the config write lock.
+func WithUploadedBackgroundLock(fn func() error) error {
+	uploadMu.Lock()
+	defer uploadMu.Unlock()
+	return fn()
+}
 
 const inlinePreviewMaxBytes = 64 << 10
 
 var ErrRemoteSourceNotAllowed = errors.New("remote background source is not allowed")
+var ErrBackgroundBusy = errors.New("background processing is busy; try again")
 
 func ResolveAssets(options model.Application) Assets {
 	source := strings.TrimSpace(options.BackgroundImage)
@@ -95,6 +110,8 @@ func ResolveAssets(options model.Application) Assets {
 		if err != nil {
 			return assets
 		}
+		assets.PreviewURL = versionUploadedURL(root, "preview", assets.PreviewURL)
+		assets.FullURL = versionUploadedURL(root, "full", assets.FullURL)
 		assets.PreviewDataURL, assets.AccentColor = resolvePreviewMetadata(filepath.Join(root, uploadDir, "background-preview"), func() ([]byte, string, error) {
 			return FetchUploadedVariant("preview")
 		})
@@ -149,6 +166,43 @@ func ResolveAssets(options model.Application) Assets {
 	return assets
 }
 
+func versionUploadedURL(root, variant, assetURL string) string {
+	info, err := os.Stat(filepath.Join(root, uploadDir, "background-"+variant+".bin"))
+	if err != nil {
+		return assetURL
+	}
+	return fmt.Sprintf("%s?v=%x-%x", assetURL, info.ModTime().UnixNano(), info.Size())
+}
+
+func UsesUploadedBackground(options model.Application) bool {
+	return strings.TrimSpace(options.BackgroundImage) != "" && usesUploadedSource(options.BackgroundImage, options.BackgroundImageMode)
+}
+
+// ReadUploadedBackgroundSource exports the original image, not cached variants.
+func ReadUploadedBackgroundSource() (string, []byte, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return "", nil, err
+	}
+	source, err := findUploadedSourceFile(filepath.Join(root, uploadDir))
+	if err != nil {
+		return "", nil, err
+	}
+	file, err := os.Open(source)
+	if err != nil {
+		return "", nil, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, sourceMaxBytes+1))
+	if err != nil {
+		return "", nil, err
+	}
+	if len(raw) == 0 || int64(len(raw)) > sourceMaxBytes {
+		return "", nil, fmt.Errorf("invalid uploaded background size")
+	}
+	return "background-source" + strings.ToLower(filepath.Ext(source)), raw, nil
+}
+
 func PreviewSource(assets Assets) string {
 	if strings.TrimSpace(assets.PreviewDataURL) != "" {
 		return assets.PreviewDataURL
@@ -163,9 +217,14 @@ func WarmRemoteVariants(source string) {
 	if cacheExists(source, "preview") && cacheExists(source, "full") {
 		return
 	}
+	select {
+	case warmSlots <- struct{}{}:
+	default:
+		return
+	}
 	go func() {
+		defer func() { <-warmSlots }()
 		_, _, _ = FetchRemoteVariant(source, "preview")
-		_, _, _ = FetchRemoteVariant(source, "full")
 	}()
 }
 
@@ -393,6 +452,12 @@ func EnsureUploadedBackgroundVariants() error {
 }
 
 func FetchRemoteVariant(source string, variant string) ([]byte, string, error) {
+	return FetchRemoteVariantContext(context.Background(), source, variant)
+}
+
+func FetchRemoteVariantContext(ctx context.Context, source string, variant string) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	source = strings.TrimSpace(source)
 	variant = normalizeVariant(variant)
 	if !isHTTPSource(source) {
@@ -408,15 +473,25 @@ func FetchRemoteVariant(source string, variant string) ([]byte, string, error) {
 	actual, loaded := inflight.LoadOrStore(key, wait)
 	if loaded {
 		if ch, ok := actual.(chan struct{}); ok {
-			<-ch
+			select {
+			case <-ch:
+			case <-ctx.Done():
+				return nil, "", ctx.Err()
+			}
 		}
 		return readCachedVariant(source, variant)
 	}
 
 	defer close(wait)
 	defer inflight.Delete(key)
+	select {
+	case fetchSlots <- struct{}{}:
+		defer func() { <-fetchSlots }()
+	default:
+		return nil, "", ErrBackgroundBusy
+	}
 
-	sourceData, sourceType, err := downloadSource(source)
+	sourceData, sourceType, err := downloadSourceContext(ctx, source)
 	if err != nil {
 		return nil, "", err
 	}
@@ -560,10 +635,16 @@ func isHTTPSource(source string) bool {
 }
 
 func downloadSource(source string) ([]byte, string, error) {
-	if err := validateRemoteSource(source); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return downloadSourceContext(ctx, source)
+}
+
+func downloadSourceContext(ctx context.Context, source string) ([]byte, string, error) {
+	if err := validateRemoteSourceContext(ctx, source); err != nil {
 		return nil, "", err
 	}
-	req, err := http.NewRequest(http.MethodGet, source, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -605,40 +686,37 @@ func validateBackgroundRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 5 {
 		return fmt.Errorf("stopped after too many background redirects")
 	}
-	return validateRemoteSource(req.URL.String())
+	return validateRemoteSourceContext(req.Context(), req.URL.String())
 }
 
 func safeBackgroundTransport() http.RoundTripper {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	allowedProxyDials := &netutil.ProxyDialAllowList{}
-	return &http.Transport{
-		Proxy: func(req *http.Request) (*url.URL, error) {
-			proxyURL, err := netutil.ProxyFromCurrentEnvironment(req)
-			if err == nil && proxyURL != nil {
-				allowedProxyDials.Remember(proxyURL)
+	return netutil.NewPinnedTransport(10*time.Second, func(ctx context.Context, u *url.URL) ([]string, error) {
+		ips, err := resolveSafeRemoteIPs(ctx, u.Hostname())
+		if err != nil {
+			return nil, err
+		}
+		port := u.Port()
+		if port == "" {
+			port = "80"
+			if u.Scheme == "https" {
+				port = "443"
 			}
-			return proxyURL, err
-		},
-		DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
-			if allowedProxyDials.Contains(address) {
-				return dialer.DialContext(ctx, network, address)
-			}
-			host, port, err := net.SplitHostPort(address)
-			if err != nil {
-				host = address
-			}
-			target, err := resolveSafeDialAddress(ctx, host, port)
-			if err != nil {
-				return nil, err
-			}
-			return dialer.DialContext(ctx, network, target)
-		},
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-	}
+		}
+		addresses := make([]string, 0, len(ips))
+		for _, ip := range ips {
+			addresses = append(addresses, net.JoinHostPort(ip.String(), port))
+		}
+		return addresses, nil
+	}, netutil.ProxyFromCurrentEnvironment)
 }
 
 func validateRemoteSource(source string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return validateRemoteSourceContext(ctx, source)
+}
+
+func validateRemoteSourceContext(ctx context.Context, source string) error {
 	u, err := url.Parse(strings.TrimSpace(source))
 	if err != nil || u == nil || u.Hostname() == "" {
 		return fmt.Errorf("%w: invalid URL", ErrRemoteSourceNotAllowed)
@@ -649,7 +727,8 @@ func validateRemoteSource(source string) error {
 	if u.User != nil {
 		return fmt.Errorf("%w: userinfo is not supported", ErrRemoteSourceNotAllowed)
 	}
-	return validateRemoteHost(u.Hostname())
+	_, err = resolveSafeRemoteIPs(ctx, u.Hostname())
+	return err
 }
 
 func validateRemoteHost(host string) error {
@@ -699,31 +778,20 @@ func resolveSafeRemoteIPs(ctx context.Context, host string) ([]netip.Addr, error
 }
 
 func isPublicRemoteIP(ip netip.Addr) bool {
-	if !ip.IsValid() {
-		return false
-	}
-	if ip.Is4In6() {
-		ip = ip.Unmap()
-	}
-	return ip.IsGlobalUnicast() &&
-		!ip.IsPrivate() &&
-		!ip.IsLoopback() &&
-		!ip.IsLinkLocalUnicast() &&
-		!ip.IsLinkLocalMulticast() &&
-		!ip.IsMulticast() &&
-		!ip.IsUnspecified()
+	return netutil.IsPublicIP(ip)
 }
 
 func makeVariants(sourceData []byte, sourceType string) ([]byte, string, []byte, string, error) {
+	if err := acquireBackgroundDecodeSlot(); err != nil {
+		return nil, "", nil, "", err
+	}
+	defer func() { <-decodeSlots }()
 	if strings.EqualFold(sourceType, "image/svg+xml") || looksLikeSVG(sourceData) {
 		return sourceData, "image/svg+xml", sourceData, "image/svg+xml", nil
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(sourceData))
+	img, err := decodeBoundedImage(sourceData)
 	if err != nil {
-		if strings.HasPrefix(sourceType, "image/") {
-			return sourceData, sourceType, sourceData, sourceType, nil
-		}
 		return nil, "", nil, "", err
 	}
 
@@ -743,15 +811,16 @@ func makeVariants(sourceData []byte, sourceType string) ([]byte, string, []byte,
 }
 
 func makePreviewOnly(sourceData []byte, sourceType string) ([]byte, string, error) {
+	if err := acquireBackgroundDecodeSlot(); err != nil {
+		return nil, "", err
+	}
+	defer func() { <-decodeSlots }()
 	if strings.EqualFold(sourceType, "image/svg+xml") || looksLikeSVG(sourceData) {
 		return sourceData, "image/svg+xml", nil
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(sourceData))
+	img, err := decodeBoundedImage(sourceData)
 	if err != nil {
-		if strings.HasPrefix(sourceType, "image/") {
-			return sourceData, sourceType, nil
-		}
 		return nil, "", err
 	}
 
@@ -783,7 +852,11 @@ func representativeColor(sourceData []byte, sourceType string) string {
 		return ""
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(sourceData))
+	if err := acquireBackgroundDecodeSlot(); err != nil {
+		return ""
+	}
+	defer func() { <-decodeSlots }()
+	img, err := decodeBoundedImage(sourceData)
 	if err != nil {
 		return ""
 	}
@@ -870,6 +943,30 @@ func representativeColor(sourceData []byte, sourceType string) string {
 	}
 
 	return rgbHex(int(selected.r/selected.n), int(selected.g/selected.n), int(selected.b/selected.n))
+}
+
+func acquireBackgroundDecodeSlot() error {
+	select {
+	case decodeSlots <- struct{}{}:
+		return nil
+	default:
+		return ErrBackgroundBusy
+	}
+}
+
+func decodeBoundedImage(raw []byte) (image.Image, error) {
+	if int64(len(raw)) > sourceMaxBytes {
+		return nil, fmt.Errorf("background image is too large")
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	if config.Width <= 0 || config.Height <= 0 || uint64(config.Width)*uint64(config.Height) > maxDecodedPixels {
+		return nil, fmt.Errorf("background image exceeds %d decoded pixels", maxDecodedPixels)
+	}
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	return img, err
 }
 
 func looksLikeSVG(data []byte) bool {

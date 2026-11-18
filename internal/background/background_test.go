@@ -3,6 +3,7 @@ package background
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/junfuchang/superflare/config/model"
+	"github.com/junfuchang/superflare/internal/netutil"
+	"github.com/junfuchang/superflare/internal/testutil"
 )
 
 func TestRepresentativeColorPrefersDominantSaturatedColor(t *testing.T) {
@@ -77,10 +80,10 @@ func TestResolveAssetsForUploadedBackground(t *testing.T) {
 	if !assets.Enabled {
 		t.Fatal("expected uploaded background assets to be enabled")
 	}
-	if assets.PreviewURL != UploadedPreviewPath {
+	if !strings.HasPrefix(assets.PreviewURL, UploadedPreviewPath+"?v=") {
 		t.Fatalf("expected preview path %q, got %q", UploadedPreviewPath, assets.PreviewURL)
 	}
-	if assets.FullURL != UploadedFullPath {
+	if !strings.HasPrefix(assets.FullURL, UploadedFullPath+"?v=") {
 		t.Fatalf("expected full path %q, got %q", UploadedFullPath, assets.FullURL)
 	}
 	if assets.PreviewDataURL == "" {
@@ -156,8 +159,10 @@ func TestEnsureUploadedBackgroundVariantsRegeneratesLegacyPreview(t *testing.T) 
 }
 
 func TestResolveAssetsForRemoteBackground(t *testing.T) {
+	t.Chdir(t.TempDir())
+	stubBackgroundWarmups(t)
 	assets := ResolveAssets(model.Application{
-		BackgroundImage:     "https://example.com/background.jpg",
+		BackgroundImage:     "https://93.184.216.34/background.jpg",
 		BackgroundImageMode: "url",
 	})
 	if !assets.Enabled {
@@ -175,6 +180,7 @@ func TestResolveAssetsForRemoteBackground(t *testing.T) {
 }
 
 func TestResolveAssetsForRemoteBackgroundUsesCachedPreviewWithoutFetching(t *testing.T) {
+	stubBackgroundWarmups(t)
 	origWd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +191,7 @@ func TestResolveAssetsForRemoteBackgroundUsesCachedPreviewWithoutFetching(t *tes
 	}
 	defer os.Chdir(origWd)
 
-	source := "https://example.com/background.jpg"
+	source := "https://93.184.216.34/background.jpg"
 	preview := solidPNGBuffer(color.NRGBA{R: 60, G: 120, B: 180, A: 255})
 	if err := writeCachedVariant(source, "preview", preview.Bytes(), "image/png"); err != nil {
 		t.Fatalf("write cached preview: %v", err)
@@ -204,16 +210,22 @@ func TestResolveAssetsForRemoteBackgroundUsesCachedPreviewWithoutFetching(t *tes
 }
 
 func TestResolveAssetsForRemoteBackgroundDoesNotBlockOnSlowFetch(t *testing.T) {
+	t.Chdir(t.TempDir())
 	origClient := httpClient
+	done := make(chan struct{})
 	httpClient = &http.Client{
 		Timeout:   time.Second,
-		Transport: blockingRoundTripper{done: make(chan struct{})},
+		Transport: blockingRoundTripper{done: done},
 	}
-	defer func() { httpClient = origClient }()
+	defer func() {
+		close(done)
+		waitForBackgroundWarmups(t)
+		httpClient = origClient
+	}()
 
 	started := time.Now()
 	assets := ResolveAssets(model.Application{
-		BackgroundImage:     "https://example.com/slow-background.jpg",
+		BackgroundImage:     "https://93.184.216.34/slow-background.jpg",
 		BackgroundImageMode: "url",
 	})
 	if !assets.Enabled {
@@ -262,9 +274,9 @@ func TestSafeBackgroundTransportUsesEnvironmentProxy(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9")
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9")
 
-	transport, ok := safeBackgroundTransport().(*http.Transport)
+	transport, ok := safeBackgroundTransport().(*netutil.PinnedTransport)
 	if !ok {
-		t.Fatalf("safeBackgroundTransport should return *http.Transport, got %T", safeBackgroundTransport())
+		t.Fatalf("safeBackgroundTransport should return pinned transport, got %T", safeBackgroundTransport())
 	}
 	if transport.Proxy == nil {
 		t.Fatal("safe background transport should use environment proxy settings")
@@ -294,14 +306,24 @@ func TestFetchRemoteVariantCanUseLocalEnvironmentProxy(t *testing.T) {
 	}
 
 	var sawTargetRequest bool
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL != nil && r.URL.Host == "93.184.216.56" && r.URL.Path == "/background.png" {
-			sawTargetRequest = true
-			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write(source.Bytes())
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.RequestURI != "/background.png" || r.Host != "93.184.216.56" {
+			http.Error(w, "unexpected origin request", http.StatusBadGateway)
 			return
 		}
-		http.Error(w, "unexpected proxy request", http.StatusBadGateway)
+		sawTargetRequest = true
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Length", fmt.Sprint(source.Len()))
+		_, _ = w.Write(source.Bytes())
+	}))
+	defer origin.Close()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "93.184.216.56:80" {
+			t.Errorf("unexpected proxy destination: %s", r.Host)
+			http.Error(w, "unpinned destination", http.StatusBadGateway)
+			return
+		}
+		testutil.ForwardProxyTunnel(t, w, r, origin.Listener.Addr().String())
 	}))
 	defer proxy.Close()
 
@@ -715,7 +737,34 @@ type blockingRoundTripper struct {
 	done chan struct{}
 }
 
-func (b blockingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
-	<-b.done
+func (b blockingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	select {
+	case <-b.done:
+	case <-req.Context().Done():
+	}
 	return nil, http.ErrHandlerTimeout
+}
+
+func stubBackgroundWarmups(t *testing.T) {
+	t.Helper()
+	previous := httpClient
+	done := make(chan struct{})
+	close(done)
+	httpClient = &http.Client{Transport: blockingRoundTripper{done: done}}
+	t.Cleanup(func() {
+		waitForBackgroundWarmups(t)
+		httpClient = previous
+	})
+}
+
+func waitForBackgroundWarmups(t *testing.T) {
+	t.Helper()
+	for range backgroundProcessLimit {
+		select {
+		case warmSlots <- struct{}{}:
+			defer func() { <-warmSlots }()
+		case <-time.After(2 * time.Second):
+			t.Fatal("background warmup did not exit")
+		}
+	}
 }

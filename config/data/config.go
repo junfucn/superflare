@@ -5,17 +5,18 @@ import (
 	"log"
 
 	"gopkg.in/yaml.v2"
+	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/junfuchang/superflare/config/model"
 )
 
-func initAppConfig(filePath string) (result model.Application, err error) {
+func initAppConfigLocked(filePath string) (result model.Application, err error) {
 	result, out, err := loadDefaultAppConfig()
 	if err != nil {
 		return result, err
 	}
 
-	if err := saveFile(filePath, out); err != nil {
+	if err := saveFileLocked(filePath, out); err != nil {
 		log.Println("init default app config failed")
 		return result, fmt.Errorf("init default app config failed: %w", err)
 	}
@@ -91,5 +92,67 @@ func LoadAppConfigFromRaw(raw []byte) (model.Application, error) {
 	if err := validateSettingsOptions(result); err != nil {
 		return result, err
 	}
+	if err := validateLoginCredentialValues(result.LoginUser, result.LoginPass, "config.yml"); err != nil {
+		return result, err
+	}
 	return result, nil
+}
+
+func upsertRawConfigFields(raw []byte, updates ...yaml.MapItem) ([]byte, error) {
+	// Preserve scalar text and unknown settings when upgrading an older backup.
+	var document yamlv3.Node
+	if err := yamlv3.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	if len(document.Content) == 0 {
+		document = yamlv3.Node{Kind: yamlv3.DocumentNode, Content: []*yamlv3.Node{{Kind: yamlv3.MappingNode, Tag: "!!map"}}}
+	}
+	fields := document.Content[0]
+	if fields.Kind == yamlv3.ScalarNode && fields.Tag == "!!null" {
+		*fields = yamlv3.Node{Kind: yamlv3.MappingNode, Tag: "!!map"}
+	}
+	if fields.Kind != yamlv3.MappingNode {
+		return nil, fmt.Errorf("config must be a YAML mapping")
+	}
+	for _, update := range updates {
+		var key, value yamlv3.Node
+		if err := key.Encode(update.Key); err != nil {
+			return nil, err
+		}
+		if err := value.Encode(update.Value); err != nil {
+			return nil, err
+		}
+		found := false
+		for index := 0; index < len(fields.Content); index += 2 {
+			field := fields.Content[index]
+			if field.Kind == key.Kind && field.Tag == key.Tag && field.Value == key.Value {
+				previous := fields.Content[index+1]
+				next := value
+				next.HeadComment, next.LineComment, next.FootComment = previous.HeadComment, previous.LineComment, previous.FootComment
+				preserveRawConfigAliases(&document, previous)
+				fields.Content[index+1] = &next
+				found = true
+			}
+		}
+		if !found {
+			fields.Content = append(fields.Content, &key, &value)
+		}
+	}
+	return yamlv3.Marshal(&document)
+}
+
+func preserveRawConfigAliases(node, replaced *yamlv3.Node) {
+	if replaced.Anchor == "" {
+		return
+	}
+	if node.Kind == yamlv3.AliasNode && node.Alias == replaced {
+		// Keep other fields that referenced an empty setting at their original value.
+		next := *replaced
+		next.Anchor = ""
+		next.HeadComment, next.LineComment, next.FootComment = node.HeadComment, node.LineComment, node.FootComment
+		*node = next
+	}
+	for _, child := range node.Content {
+		preserveRawConfigAliases(child, replaced)
+	}
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/junfuchang/superflare/cmd"
+	"github.com/junfuchang/superflare/config/data"
 	"github.com/junfuchang/superflare/config/define"
 	"github.com/junfuchang/superflare/config/model"
 	"github.com/junfuchang/superflare/internal/logger"
@@ -54,6 +55,56 @@ func TestParse(t *testing.T) {
 		CookieSecret:         define.DEFAULT_COOKIE_SECRET,
 	}
 	assert.Equal(t, expectedFlags, actualFlags)
+}
+
+func TestParseESeedsFirstAccountAndKeepsItOnRestart(t *testing.T) {
+	for _, source := range []string{"environment", "dotenv", "dotenv-export"} {
+		t.Run(source, func(t *testing.T) {
+			resetCmdEnv(t)
+			withTempCmdWorkDir(t)
+			origArgs := os.Args
+			origRuntime, runtimeSet := define.SnapshotAppRuntimeFlags()
+			origFlags, origBase, origSource := define.AppFlags, define.AppBaseFlags, define.AppSourceFlags
+			t.Cleanup(func() {
+				os.Args = origArgs
+				if runtimeSet {
+					define.StoreAppRuntimeFlags(origRuntime.Source, origRuntime.Base, origRuntime.Current)
+				} else {
+					define.ResetAppRuntimeFlags()
+				}
+				define.AppFlags, define.AppBaseFlags, define.AppSourceFlags = origFlags, origBase, origSource
+			})
+			os.Args = []string{"superflare"}
+			setAccount := func(user, pass string) {
+				if source == "environment" {
+					t.Setenv("FLARE_USER", user)
+					t.Setenv("FLARE_PASS", pass)
+				} else {
+					content := "FLARE_USER=" + user + "\nFLARE_PASS=" + pass + "\n"
+					if source == "dotenv-export" {
+						content = "export FLARE_USER = \"" + user + "\"\r\n export FLARE_PASS = \"" + pass + "\"\r\n"
+					}
+					if err := os.WriteFile(".env", []byte(content), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			setAccount("deployment-user", "deployment-strong-password")
+			resolved, err := cmd.ParseE()
+			if err != nil || resolved.User != "deployment-user" || resolved.Pass != "deployment-strong-password" {
+				t.Fatalf("startup account ignored: user=%q err=%v", resolved.User, err)
+			}
+			user, pass, err := data.GetLoginConfig()
+			if err != nil || user != resolved.User || pass != resolved.Pass {
+				t.Fatalf("startup account not persisted: user=%q err=%v", user, err)
+			}
+			setAccount("different-user", "different-password")
+			restarted, err := cmd.ParseE()
+			if err != nil || restarted.User != resolved.User || restarted.Pass != resolved.Pass {
+				t.Fatalf("restart replaced persisted account: user=%q err=%v", restarted.User, err)
+			}
+		})
+	}
 }
 
 func captureOutput(f func()) string {
@@ -227,12 +278,16 @@ func TestParseEFailsWhenDotEnvContainsInvalidConfiguredValues(t *testing.T) {
 	}
 }
 
-func TestParseERepairsDotEnvLoginCredentialsWhenIncomplete(t *testing.T) {
+func TestParseEIgnoresIncompleteDotEnvLoginCredentials(t *testing.T) {
 	resetCmdEnv(t)
 	tmpDir := withTempCmdWorkDir(t)
 
-	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("FLARE_USER=env-user\nFLARE_PASS=\n"), 0644); err != nil {
+	env := []byte("FLARE_USER=env-user\nFLARE_PASS=\n")
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), env, 0644); err != nil {
 		t.Fatalf("write .env: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.yml"), []byte("Title: SuperFlare\nLocale: zh\nTheme: blackboard\nLoginUser: saved-user\nLoginPass: saved-password\n"), 0644); err != nil {
+		t.Fatalf("write config.yml: %v", err)
 	}
 
 	origArgs := os.Args
@@ -243,8 +298,15 @@ func TestParseERepairsDotEnvLoginCredentialsWhenIncomplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseE: %v", err)
 	}
-	if resolved.User != define.DEFAULT_LOGIN_USER || resolved.Pass != define.DEFAULT_LOGIN_PASS {
-		t.Fatalf("expected repaired default credentials, got %q/%q", resolved.User, resolved.Pass)
+	if resolved.User != "saved-user" || resolved.Pass != "saved-password" {
+		t.Fatalf("expected persisted credentials, got %q/%q", resolved.User, resolved.Pass)
+	}
+	after, err := os.ReadFile(filepath.Join(tmpDir, ".env"))
+	if err != nil {
+		t.Fatalf("read .env: %v", err)
+	}
+	if string(after) != string(env) {
+		t.Fatalf("incomplete .env credentials were rewritten: %q", after)
 	}
 }
 

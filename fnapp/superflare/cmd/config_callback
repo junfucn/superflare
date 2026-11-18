@@ -15,7 +15,7 @@ log_and_fail() {
 ensure_runtime_layout || log_and_fail "Failed to prepare runtime layout before applying login settings."
 
 login_enabled="$(printf '%s' "${wizard_login_enabled:-true}" | tr -d '\r' | xargs | tr '[:upper:]' '[:lower:]')"
-user="$(printf '%s' "${wizard_login_user:-}" | tr -d '\r' | xargs)"
+user="$(trim_value "${wizard_login_user:-}")"
 pass="$(printf '%s' "${wizard_login_pass:-}" | tr -d '\r')"
 confirm="$(printf '%s' "${wizard_login_pass_confirm:-}" | tr -d '\r')"
 current_user="$(read_yaml_value "${CONFIG_FILE}" "LoginUser")" || log_and_fail "Failed to read current login settings."

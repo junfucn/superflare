@@ -62,6 +62,7 @@ func TestSiteIconStreamDeliversFastIconBeforeSlowSourcesFinish(t *testing.T) {
 	}
 	fastSource := upstream.URL + "/favicon.ico?source=fast"
 	sources = append(sources, fastSource, fastSource)
+	configureTestIcons(t, sources...)
 	body, err := json.Marshal(map[string]any{"sources": sources})
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +144,7 @@ func TestSiteIconStreamExtendsServerWriteDeadline(t *testing.T) {
 	server.Config.WriteTimeout = 20 * time.Millisecond
 	server.Start()
 	defer server.Close()
+	configureTestIcons(t, upstream.URL+"/favicon.ico")
 
 	body, err := json.Marshal(map[string]any{"sources": []string{upstream.URL + "/favicon.ico"}})
 	if err != nil {

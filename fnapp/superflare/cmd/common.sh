@@ -33,9 +33,15 @@ fi
 
 APP_BIN="${APPDEST_DIR}/server/superflare"
 DEFAULTS_DIR="${APPDEST_DIR}/server/defaults"
-ETC_DIR="${PKG_ETC_DIR}"
-VAR_DIR="${PKG_VAR_DIR}"
+SHARE_DIR="${TRIM_DATA_SHARE_PATHS:-${PACKAGE_ROOT}/share/superflare}"
+if [ -d "${SHARE_DIR}" ]; then
+    SHARE_DIR="$(CDPATH= cd -- "${SHARE_DIR}" && pwd -P)"
+fi
+STORAGE_DIR="${SHARE_DIR}/data"
+ETC_DIR="${STORAGE_DIR}/etc"
+VAR_DIR="${STORAGE_DIR}/var"
 LEGACY_RUNTIME_DIR="${VAR_DIR}/runtime"
+LEGACY_PID_FILE="${PKG_VAR_DIR}/run/superflare.pid"
 WORK_DIR="${ETC_DIR}"
 RUN_DIR="${VAR_DIR}/run"
 PID_FILE="${RUN_DIR}/superflare.pid"
@@ -53,21 +59,23 @@ if [ -z "${TMP_LOG_FILE}" ]; then
 fi
 CONFIG_FILE="${ETC_DIR}/config.yml"
 
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/storage.sh"
+
 timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
 log_info() {
-    if [ -n "${APP_LOG}" ] && mkdir -p "$(dirname "${APP_LOG}")" 2>/dev/null; then
+    if [ -f "${STORAGE_DIR}/.shared-storage" ] && [ -d "${RUN_DIR}" ]; then
         printf '%s %s\n' "$(timestamp)" "$*" >> "${APP_LOG}" 2>/dev/null || true
     fi
 }
 
 log_lifecycle() {
-    if [ -n "${APP_LOG}" ] && mkdir -p "$(dirname "${APP_LOG}")" 2>/dev/null; then
-        printf '%s %s\n' "$(timestamp)" "$*" >> "${APP_LOG}" 2>/dev/null || true
-    fi
-    if [ -n "${TMP_LOG_FILE}" ] && mkdir -p "$(dirname "${TMP_LOG_FILE}")" 2>/dev/null; then
+    log_info "$@"
+    if [ -n "${TMP_LOG_FILE}" ] &&
+       { [ -d "${RUN_DIR}" ] || [ -n "${TRIM_TEMP_LOGFILE:-}" ]; }; then
         printf '%s\n' "$*" >> "${TMP_LOG_FILE}" 2>/dev/null || true
     fi
 }
@@ -91,6 +99,17 @@ require_path() {
     return 1
 }
 
+secure_credential_file() {
+    local file="$1"
+
+    if [ -e "${file}" ] || [ -L "${file}" ]; then
+        if [ ! -f "${file}" ]; then
+            return 1
+        fi
+        chmod go-rwx,u-x "${file}"
+    fi
+}
+
 generate_secret() {
     if [ -r /dev/urandom ] && command -v tr >/dev/null 2>&1; then
         tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48
@@ -105,12 +124,27 @@ copy_default_file() {
     local dst="${ETC_DIR}/${name}"
 
     if [ ! -e "${dst}" ] && [ ! -L "${dst}" ] && [ -f "${src}" ]; then
-        cp "${src}" "${dst}"
+        if [ "${name}" = "config.yml" ]; then
+            (umask 077; cp "${src}" "${dst}")
+        else
+            cp "${src}" "${dst}"
+        fi
     fi
 }
 
 has_existing_runtime_config() {
+    local directory
     local name
+    for directory in "${PKG_ETC_DIR}" "${PKG_VAR_DIR}/runtime"; do
+        if [ "${directory}" = "${PKG_VAR_DIR}/runtime" ] && [ -L "${directory}" ]; then
+            continue
+        fi
+        for name in .env config.yml apps.yml bookmarks.yml ports.yaml; do
+            if [ -e "${directory}/${name}" ] || [ -L "${directory}/${name}" ]; then
+                return 0
+            fi
+        done
+    done
     for name in .env config.yml apps.yml bookmarks.yml ports.yaml; do
         if [ -e "${ETC_DIR}/${name}" ] || [ -L "${ETC_DIR}/${name}" ]; then
             return 0
@@ -161,7 +195,14 @@ upsert_env_value() {
         if [ -e "${file}" ] || [ -L "${file}" ]; then
             return 1
         fi
-        : > "${file}" || return 1
+        if [ "$(basename "${file}")" = ".env" ]; then
+            (umask 077; : > "${file}") || return 1
+        else
+            : > "${file}" || return 1
+        fi
+    fi
+    if [ "$(basename "${file}")" = ".env" ]; then
+        secure_credential_file "${file}" || return 1
     fi
     formatted="$(format_env_value "${value}")" || return 1
     tmp="$(mktemp)" || return 1
@@ -211,25 +252,20 @@ ensure_env_key() {
 }
 
 read_env_value() {
-    local file="$1"
-    local key="$2"
-    local line
-    local value
+    read_config_value env "$1" "$2"
+}
+
+read_config_value() {
+    local format="$1"
+    local file="$2"
+    local key="$3"
 
     if [ ! -e "${file}" ] && [ ! -L "${file}" ]; then
         return 0
     fi
     [ -f "${file}" ] && [ -r "${file}" ] || return 1
 
-    while IFS= read -r line || [ -n "${line}" ]; do
-        line="${line#$'\xef\xbb\xbf'}"
-        if [[ "${line}" =~ ^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*= ]]; then
-            value="${line#*=}"
-            parse_shell_value "${value}"
-            return $?
-        fi
-    done < "${file}" || return 1
-    return 0
+    "${APP_BIN}" config-read "${format}" "${file}" "${key}"
 }
 
 yaml_escape() {
@@ -242,7 +278,6 @@ trim_value() {
 
 format_env_value() {
     local value="$1"
-    local escaped
 
     if [ -z "${value}" ]; then
         printf ''
@@ -250,10 +285,11 @@ format_env_value() {
     fi
 
     case "${value}" in
-        *[[:space:]#\;\"\'\\]*)
-            escaped="${value//\\/\\\\}"
-            escaped="${escaped//\"/\\\"}"
-            printf '"%s"' "${escaped}"
+        *\"*)
+            printf '"""%s"""' "${value}"
+            ;;
+        *[[:space:]#\;\'\`\\]*)
+            printf '"%s"' "${value}"
             ;;
         *)
             printf '%s' "${value}"
@@ -261,50 +297,8 @@ format_env_value() {
     esac
 }
 
-parse_shell_value() {
-    local value
-    local quote
-    local rest
-
-    value="$(trim_value "$1")"
-    quote="${value:0:1}"
-    if [ "${quote}" = "'" ] || [ "${quote}" = '"' ]; then
-        rest="${value:1}"
-        value="${rest%%${quote}*}"
-        if [ "${quote}" = '"' ]; then
-            value="${value//\\\"/\"}"
-            value="${value//\\\\/\\}"
-        else
-            value="${value//\'\'/\'}"
-        fi
-        printf '%s\n' "${value}"
-        return 0
-    fi
-
-    value="$(printf '%s' "${value}" | sed 's/[[:space:]]#.*$//;s/[[:space:]]*$//')"
-    printf '%s\n' "${value}"
-}
-
 read_yaml_value() {
-    local file="$1"
-    local key="$2"
-    local line
-    local value
-
-    if [ ! -e "${file}" ] && [ ! -L "${file}" ]; then
-        return 0
-    fi
-    [ -f "${file}" ] && [ -r "${file}" ] || return 1
-
-    while IFS= read -r line || [ -n "${line}" ]; do
-        line="${line#$'\xef\xbb\xbf'}"
-        if [[ "${line}" =~ ^[[:space:]]*${key}[[:space:]]*: ]]; then
-            value="${line#*:}"
-            parse_shell_value "${value}"
-            return $?
-        fi
-    done < "${file}" || return 1
-    return 0
+    read_config_value yaml "$1" "$2"
 }
 
 upsert_yaml_value() {
@@ -317,8 +311,8 @@ upsert_yaml_value() {
     [ -f "${file}" ] || return 1
     escaped="$(yaml_escape "${value}")" || return 1
     tmp="$(mktemp)" || return 1
-    if ! awk -v key="${key}" -v value="${escaped}" '
-        BEGIN { updated = 0 }
+    if ! SUPERFLARE_YAML_VALUE="${escaped}" awk -v key="${key}" '
+        BEGIN { updated = 0; value = ENVIRON["SUPERFLARE_YAML_VALUE"] }
         index($0, key ":") == 1 {
             print key ": '\''" value "'\''"
             updated = 1
@@ -352,7 +346,7 @@ ensure_env_file() {
     fi
 
     if [ ! -f "${env_file}" ]; then
-        cat > "${env_file}" <<EOF || return 1
+        (umask 077; cat > "${env_file}" <<EOF) || return 1
 FLARE_DISABLE_LOGIN=false
 FLARE_EDITOR=true
 FLARE_GUIDE=true
@@ -361,6 +355,7 @@ FLARE_COOKIE_SECRET=$(generate_secret)
 EOF
     fi
 
+    secure_credential_file "${env_file}" || return 1
     ensure_env_key "${env_file}" "FLARE_PORT" "${TRIM_SERVICE_PORT:-3636}" || return 1
     ensure_env_key "${env_file}" "FLARE_DISABLE_LOGIN" "false" || return 1
     ensure_env_key "${env_file}" "FLARE_EDITOR" "true" || return 1
@@ -395,6 +390,8 @@ ensure_login_config_defaults() {
     local user=""
     local pass=""
 
+    secure_credential_file "${CONFIG_FILE}" || return 1
+
     user="$(read_yaml_value "${CONFIG_FILE}" "LoginUser")" || return 1
     pass="$(read_yaml_value "${CONFIG_FILE}" "LoginPass")" || return 1
 
@@ -407,19 +404,16 @@ ensure_login_config_defaults() {
     return 0
 }
 
-sync_login_config_locked() {
+sync_login_config() {
     local user="$1"
     local pass="$2"
 
-    upsert_env_value "${ETC_DIR}/.env" "FLARE_USER" "${user}" || return 1
-    upsert_env_value "${ETC_DIR}/.env" "FLARE_PASS" "${pass}" || return 1
-    upsert_yaml_value "${CONFIG_FILE}" "LoginUser" "${user}" || return 1
-    upsert_yaml_value "${CONFIG_FILE}" "LoginPass" "${pass}" || return 1
-    return 0
-}
-
-sync_login_config() {
-    with_config_lock sync_login_config_locked "$@"
+    # The Go writer validates and commits both files under the shared lock.
+    # Keep credentials off the process command line and avoid nested flock.
+    (
+        cd "${ETC_DIR}" || exit 1
+        printf '%s\0%s\0' "${user}" "${pass}" | "${APP_BIN}" config-login
+    )
 }
 
 sync_login_enabled_config_locked() {
@@ -517,6 +511,8 @@ ensure_runtime_layout_locked() {
     ensure_dir "${ETC_DIR}" &&
     ensure_dir "${VAR_DIR}" &&
     ensure_dir "${RUN_DIR}" &&
+    ensure_dir "${VAR_DIR}/home" &&
+    ensure_dir "${VAR_DIR}/tmp" &&
     ensure_dir "${VAR_DIR}/cache" &&
     ensure_dir "${VAR_DIR}/cache/backgrounds" &&
     ensure_dir "${VAR_DIR}/cache/site-icons" &&
@@ -543,6 +539,9 @@ ensure_runtime_layout() {
     require_path "${ETC_DIR}" "ETC_DIR" || return 1
     require_path "${VAR_DIR}" "VAR_DIR" || return 1
 
+    prepare_shared_storage || return 1
+    export TMPDIR="${VAR_DIR}/tmp"
+    ensure_dir "${TMPDIR}" || return 1
     with_config_lock ensure_runtime_layout_locked
 }
 
@@ -601,10 +600,20 @@ discover_running_pid() {
         return 0
     fi
 
+    if [ -r "${LEGACY_PID_FILE}" ]; then
+        pid="$(head -n 1 "${LEGACY_PID_FILE}" | tr -d '[:space:]')"
+        if process_matches_pid "${pid}"; then
+            printf '%s' "${pid}"
+            return 0
+        fi
+    fi
+
     if command -v pgrep >/dev/null 2>&1; then
         for pid in $(pgrep -f "${APP_BIN}" 2>/dev/null || true); do
             if process_matches_pid "${pid}"; then
-                printf '%s' "${pid}" > "${PID_FILE}"
+                if [ -d "${RUN_DIR}" ]; then
+                    printf '%s' "${pid}" > "${PID_FILE}"
+                fi
                 printf '%s' "${pid}"
                 return 0
             fi
@@ -638,8 +647,9 @@ start_app() {
 
     (
         cd "${WORK_DIR}" || exit 1
-        export HOME="${TRIM_PKGHOME:-${VAR_DIR}}"
+        export HOME="${VAR_DIR}/home"
         export XDG_CACHE_HOME="${VAR_DIR}/cache"
+        export TMPDIR="${VAR_DIR}/tmp"
         "${APP_BIN}" --port "${TRIM_SERVICE_PORT:-3636}" >> "${APP_LOG}" 2>&1 &
         printf '%s' "$!" > "${PID_FILE}"
     )

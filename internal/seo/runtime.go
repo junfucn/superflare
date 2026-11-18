@@ -12,8 +12,9 @@ import (
 // about. Visibility controls whether private pages such as /applications and
 // /bookmarks may be advertised in sitemap.xml and llms.txt.
 type runtimeSnapshot struct {
-	DebugMode  bool
-	Visibility string
+	DebugMode    bool
+	Visibility   string
+	DisableLogin bool
 }
 
 type runtimeHolder struct {
@@ -48,14 +49,15 @@ var seoRuntimeFlags = &runtimeHolder{}
 
 func runtimeSnapshotFromFlags(flags model.Flags) runtimeSnapshot {
 	return runtimeSnapshot{
-		DebugMode:  flags.DebugMode,
-		Visibility: strings.ToUpper(strings.TrimSpace(flags.Visibility)),
+		DebugMode:    flags.DebugMode,
+		Visibility:   strings.ToUpper(strings.TrimSpace(flags.Visibility)),
+		DisableLogin: flags.DisableLoginMode,
 	}
 }
 
 func currentRuntime() runtimeSnapshot {
 	snapshot := seoRuntimeFlags.Load()
-	if snapshot.Visibility != "" || snapshot.DebugMode {
+	if snapshot.Visibility != "" || snapshot.DebugMode || snapshot.DisableLogin {
 		return snapshot
 	}
 	snapshot = runtimeSnapshotFromFlags(define.CurrentAppRuntimeFlags())
@@ -68,8 +70,9 @@ func SetRuntimeFlags(flags model.Flags) {
 	seoRuntimeFlags.Store(runtimeSnapshotFromFlags(flags))
 }
 
-// VisibilityIsPrivate reports whether the instance hides applications and
-// bookmarks behind authentication.
+// VisibilityIsPrivate also excludes trusted, login-disabled instances from
+// indexing, since their navigation pages include private items.
 func VisibilityIsPrivate() bool {
-	return strings.EqualFold(currentRuntime().Visibility, "PRIVATE")
+	runtime := currentRuntime()
+	return runtime.DisableLogin || strings.EqualFold(runtime.Visibility, "PRIVATE")
 }

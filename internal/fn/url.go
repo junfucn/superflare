@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"regexp"
 	"strings"
+
+	"github.com/junfuchang/superflare/config/validation"
+	"github.com/junfuchang/superflare/internal/netutil"
 )
 
 // DynamicURL holds parsed request URL components. Use ParseRequestURLTo and ParseDynamicUrlWith to avoid global state.
@@ -24,32 +26,38 @@ type DynamicURL struct {
 // RequestURL is the package-level parsed URL (set by ParseRequestURL). Prefer ParseRequestURLTo and passing *DynamicURL for concurrency-safe use.
 var RequestURL DynamicURL
 
-var hostPortRe = regexp.MustCompile(`([\w+\.-]+):(\d+)$`)
 var readInterfaceAddrs = net.InterfaceAddrs
 
 func getPort(host string, defaultPort string) (hostname string, port string) {
 	hostname = host
 	port = defaultPort
-	portMatch := hostPortRe.FindStringSubmatch(host)
-	if portMatch != nil {
-		hostname = portMatch[1]
-		port = portMatch[2]
+	if splitHost, splitPort, err := net.SplitHostPort(host); err == nil {
+		hostname = splitHost
+		if splitPort != "" {
+			port = splitPort
+		}
+	}
+	// The hostname placeholder is inserted into URLs, so IPv6 needs brackets.
+	if strings.Contains(hostname, ":") && !strings.HasPrefix(hostname, "[") {
+		hostname = "[" + hostname + "]"
 	}
 	return
 }
 
 // ParseRequestURLTo parses r into a DynamicURL without using package-level state. Prefer this over ParseRequestURL when possible.
 func ParseRequestURLTo(r *http.Request) DynamicURL {
-	scheme := "http:"
+	scheme := netutil.RequestScheme(r) + ":"
 	defaultPort := "80"
-	if r != nil && r.TLS != nil {
-		scheme = "https:"
+	if scheme == "https:" {
 		defaultPort = "443"
 	}
 	host := ""
 	remoteHost := ""
 	if r != nil {
 		host = r.Host
+		if forwardedHost := netutil.RequestForwardedHost(r); isSafeRequestHost(forwardedHost) {
+			host = forwardedHost
+		}
 		remoteHost = RequestClientHost(r)
 	}
 	hostname, port := getPort(host, defaultPort)
@@ -57,7 +65,7 @@ func ParseRequestURLTo(r *http.Request) DynamicURL {
 	requestURI := ""
 	if r != nil && r.URL != nil {
 		pathname = r.URL.Path
-		requestURI = r.RequestURI
+		requestURI = r.URL.RequestURI()
 	}
 	return DynamicURL{
 		Host:       host,
@@ -69,6 +77,15 @@ func ParseRequestURLTo(r *http.Request) DynamicURL {
 		Protocol:   scheme,
 		RemoteHost: remoteHost,
 	}
+}
+
+func isSafeRequestHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	parsed, err := url.Parse("http://" + host)
+	return err == nil && parsed.Host == host && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == "" && validation.IsValidHTTPURL("http://"+host)
 }
 
 // ParseRequestURL parses r and updates package-level RequestURL. For new code, prefer ParseRequestURLTo and ParseDynamicUrlWith.
@@ -136,19 +153,8 @@ func RequestClientHost(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
-		if value := strings.TrimSpace(r.Header.Get(header)); value != "" {
-			for _, part := range strings.Split(value, ",") {
-				part = strings.TrimSpace(part)
-				if part == "" {
-					continue
-				}
-				if splitHost, _, err := net.SplitHostPort(part); err == nil {
-					return strings.Trim(splitHost, "[]")
-				}
-				return strings.Trim(part, "[]")
-			}
-		}
+	if forwardedIP := netutil.RequestForwardedClientIP(r); forwardedIP.IsValid() {
+		return forwardedIP.String()
 	}
 	if strings.TrimSpace(r.RemoteAddr) == "" {
 		return ""

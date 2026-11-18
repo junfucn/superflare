@@ -168,6 +168,7 @@ func TestSiteIconProxyCacheMissWaitsForSuccessfulFetch(t *testing.T) {
 	e := echo.New()
 	RegisterRouting(e)
 	iconURL := upstream.URL + "/favicon.ico"
+	configureTestIcons(t, iconURL)
 	req := httptest.NewRequest(http.MethodGet, "/assets/site-icons?src="+url.QueryEscape(iconURL), nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -219,6 +220,11 @@ func TestSiteIconProxyLimitsConcurrentUniqueSourceFetches(t *testing.T) {
 	}))
 	defer upstream.Close()
 	defer releaseUpstream()
+	var sources []string
+	for index := 0; index < requestCount; index++ {
+		sources = append(sources, fmt.Sprintf("%s/favicon.ico?source=%d", upstream.URL, index))
+	}
+	configureTestIcons(t, sources...)
 
 	e := echo.New()
 	RegisterRouting(e)
@@ -369,6 +375,7 @@ func TestSiteIconProxyCacheHitServesCachedData(t *testing.T) {
 		t.Fatalf("MkdirAll cache: %v", err)
 	}
 	iconURL := "https://example.com/favicon.ico"
+	configureTestIcons(t, iconURL)
 	cacheFile := filepath.Join(cacheDir, fn.SiteFaviconCacheKeyForTest(iconURL)+".bin")
 	cachedSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>`)
 	if err := os.WriteFile(cacheFile, cachedSVG, 0644); err != nil {
@@ -401,7 +408,7 @@ func TestSiteIconProxyCacheHitServesCachedData(t *testing.T) {
 	if !strings.HasPrefix(etag, `W/"`) {
 		t.Fatalf("site icon proxy should use a weak ETag across content encodings, got %q", etag)
 	}
-	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=604800, immutable" {
+	if got := rec.Header().Get("Cache-Control"); got != "private, no-cache" {
 		t.Fatalf("site icon proxy cache-control = %q", got)
 	}
 	contentSecurityPolicy := rec.Header().Get("Content-Security-Policy")
@@ -451,6 +458,7 @@ func setupAssetsConfigDir(t *testing.T) string {
 	t.Cleanup(func() {
 		_ = os.Chdir(oldWD)
 	})
+	configureTestIcons(t, "https://example.invalid/favicon.ico")
 	return tmpDir
 }
 

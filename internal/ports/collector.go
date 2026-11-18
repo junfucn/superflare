@@ -2,7 +2,6 @@ package ports
 
 import (
 	"fmt"
-	"net"
 	"sort"
 	"strings"
 
@@ -165,44 +164,4 @@ func ownerResolutionWarning(items []runtimePort, detail string) CollectionWarnin
 		MissingOwners: countRuntimePortsMissingOwnerInfo(items),
 		RuntimePorts:  len(items),
 	}
-}
-
-func LocalLANHost() string {
-	if host := firstPrivateIPv4(); host != "" {
-		return host
-	}
-	return "127.0.0.1"
-}
-
-func firstPrivateIPv4() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil {
-				continue
-			}
-			ip4 := ip.To4()
-			if ip4 != nil && ip4.IsPrivate() {
-				return ip4.String()
-			}
-		}
-	}
-	return ""
 }

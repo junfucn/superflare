@@ -1,0 +1,6 @@
+.network-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0 0 18px; font-size:13px; line-height:1.5; letter-spacing:0; }
+.network-controls output { overflow-wrap:anywhere; }
+.network-controls[data-state="verified"] output { color:var(--color-primary); }
+.network-icon-button { display:inline-flex; justify-content:center; align-items:center; flex:0 0 auto; width:30px; height:30px; padding:5px; border:0; border-radius:4px; background:transparent; color:var(--color-primary); cursor:pointer; }
+.network-icon-button svg,.network-icon-button img { width:20px; height:20px; display:block; }
+.network-icon-button:focus-visible { outline:2px solid var(--color-primary); outline-offset:-2px; }

@@ -165,10 +165,10 @@ func TestRenderBookmarkIcon_ExplicitImageWins(t *testing.T) {
 	if !strings.Contains(out, `src="https://cdn.example.com/icon.png"`) {
 		t.Fatalf("explicit image icon should be used, got %q", out)
 	}
-	if strings.Contains(out, "example.com/favicon.ico") {
+	if strings.Contains(out, "example.com/favicon.ico") || strings.Contains(out, "data-site-icon-direct") {
 		t.Fatalf("explicit image icon should not be replaced by site favicon, got %q", out)
 	}
-	for _, expected := range []string{`loading="lazy"`, `decoding="async"`} {
+	for _, expected := range []string{`loading="lazy"`, `decoding="async"`, `data-site-icon-fallback-src="/assets/mdi/blackboard-bookmark.svg"`} {
 		if !strings.Contains(out, expected) {
 			t.Fatalf("explicit image icon should not block page load or rendering, missing %q in %q", expected, out)
 		}

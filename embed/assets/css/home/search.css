@@ -1,29 +1,60 @@
+#search-container .search-field {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
 #search-container #search {
-  width: 100%;
-  padding: 10px 0;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 4px;
   color: var(--color-primary);
   font-size: 20px;
-  /* margin-bottom: 20px; */
   background-color: transparent;
   border: none;
   border-bottom: 2px solid var(--color-accent);
-  opacity: 0.5;
-  transition: all 0.2s;
-  outline: none;
 }
 
-#search-container #search-label {
-  text-align: right;
+#search-container #search::placeholder {
+  color: color-mix(in srgb, var(--color-primary) 73%, var(--color-background));
+}
+
+#search-container button {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  background: var(--color-background);
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+#search-container button:hover {
+  background: color-mix(in srgb, var(--color-background) 85%, var(--color-accent));
+}
+
+#search-container :focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.search-results-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin-top: 20px;
+  overflow-wrap: anywhere;
+}
+
+.search-results-header h2 {
+  font-size: 20px;
+}
+
+.search-results-header a {
+  text-decoration: underline;
+}
+
+.search-results-header p {
   width: 100%;
-  display: block;
-  opacity: 0;
-}
-
-#search-container #search:active + label {
-  opacity: 1;
-  transition: all 0.2s;
-}
-#search-container #search:focus + label {
-  opacity: 1;
-  transition: all 0.2s;
 }

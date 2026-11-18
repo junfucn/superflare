@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/junfuchang/superflare/cmd"
-	"github.com/junfuchang/superflare/config/define"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -109,11 +108,6 @@ func TestParseEnvFile_ParseOverwrite(t *testing.T) {
 	envParsed.Port = 2345
 	envParsed.EnableGuide = false
 
-	envParsed.User = define.DEFAULT_LOGIN_USER
-	envParsed.Pass = define.DEFAULT_LOGIN_PASS
-	envParsed.UserIsGenerated = false
-	envParsed.PassIsGenerated = false
-
 	assert.Equal(t, flags, envParsed)
 }
 
@@ -137,29 +131,27 @@ func TestParseEnvFile_PortError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestParseEnvFile_RepairsCredentialsWhenOnlyUserIsConfigured(t *testing.T) {
+func TestParseEnvFile_IgnoresIncompleteCredentialsWhenOnlyUserIsConfigured(t *testing.T) {
 	resetCmdEnv(t)
 	withTempCmdWorkDir(t)
 	t.Setenv("FLARE_DEBUG", "true")
 
-	defaults := define.DefaultEnvVars
-
 	envParsed := cmd.ParseEnvVars()
 	envPath := ".env"
-	envParsed.User = defaults.User
-	envParsed.Pass = defaults.Pass
-	envParsed.UserIsGenerated = false
-	envParsed.PassIsGenerated = false
+	envParsed.User = "fallback-user"
+	envParsed.Pass = "fallback-password"
+	envParsed.UserIsGenerated = true
+	envParsed.PassIsGenerated = true
 
-	// test .env auto correct
 	defer os.Remove(envPath)
-	_ = os.WriteFile(envPath, []byte("FLARE_PORT=3636\nFLARE_USER=superflare\nFLARE_PASS=\n"), 0644)
+	original := []byte("FLARE_PORT=3636\nFLARE_USER=superflare\nFLARE_PASS=\n")
+	_ = os.WriteFile(envPath, original, 0644)
 	flags, err := cmd.ParseEnvFileE(envParsed)
 	assert.NoError(t, err)
-	assert.Equal(t, define.DEFAULT_LOGIN_USER, flags.User)
-	assert.Equal(t, define.DEFAULT_LOGIN_PASS, flags.Pass)
-	assert.False(t, flags.UserIsGenerated)
-	assert.False(t, flags.PassIsGenerated)
+	assert.Equal(t, envParsed, flags)
+	after, readErr := os.ReadFile(envPath)
+	assert.NoError(t, readErr)
+	assert.Equal(t, original, after)
 }
 
 func TestParseEnvFile_PasswordWithCommentChars(t *testing.T) {
@@ -187,21 +179,26 @@ func TestParseEnvFile_PasswordWithCommentChars(t *testing.T) {
 	assert.Equal(t, false, flags.PassIsGenerated)
 }
 
-func TestParseEnvFile_RepairsIncompleteLoginCredentials(t *testing.T) {
+func TestParseEnvFile_IgnoresIncompleteLoginCredentials(t *testing.T) {
 	resetCmdEnv(t)
 	withTempCmdWorkDir(t)
 	t.Setenv("FLARE_DEBUG", "true")
 
 	envParsed := cmd.ParseEnvVars()
+	envParsed.User = "fallback-user"
+	envParsed.Pass = "fallback-password"
+	envParsed.UserIsGenerated = true
+	envParsed.PassIsGenerated = true
 	envPath := ".env"
 
 	defer os.Remove(envPath)
-	_ = os.WriteFile(envPath, []byte("FLARE_USER=superflare\nFLARE_PASS=\n"), 0644)
+	original := []byte("FLARE_USER=superflare\nFLARE_PASS=\n")
+	_ = os.WriteFile(envPath, original, 0644)
 
 	flags, err := cmd.ParseEnvFileE(envParsed)
 	assert.NoError(t, err)
-	assert.Equal(t, define.DEFAULT_LOGIN_USER, flags.User)
-	assert.Equal(t, define.DEFAULT_LOGIN_PASS, flags.Pass)
-	assert.False(t, flags.UserIsGenerated)
-	assert.False(t, flags.PassIsGenerated)
+	assert.Equal(t, envParsed, flags)
+	after, readErr := os.ReadFile(envPath)
+	assert.NoError(t, readErr)
+	assert.Equal(t, original, after)
 }

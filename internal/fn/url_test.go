@@ -4,7 +4,11 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
+
+	"github.com/junfuchang/superflare/internal/netutil"
 )
 
 func TestParseRequestURL_HTTP(t *testing.T) {
@@ -29,6 +33,65 @@ func TestParseRequestURL_HTTP(t *testing.T) {
 	}
 	if RequestURL.RemoteHost != "192.168.1.88" {
 		t.Errorf("RemoteHost: got %q", RequestURL.RemoteHost)
+	}
+}
+
+func TestDynamicURLIPv6AndProxyScheme(t *testing.T) {
+	for _, tc := range []struct {
+		address, proto, hostname, port, origin, expanded string
+	}{
+		{"http://[fd00::1]:3636/path?q=1", "", "[fd00::1]", "3636", "http://[fd00::1]:3636", "http://[fd00::1]:5000/"},
+		{"http://[fd00::1]/path?q=1", "https", "[fd00::1]", "443", "https://[fd00::1]", "https://[fd00::1]:5000/"},
+		{"http://nav.example.test/path?q=1", "https", "nav.example.test", "443", "https://nav.example.test", "https://nav.example.test:5000/"},
+		{"http://nav.example.test:9443/path?q=1", "https", "nav.example.test", "9443", "https://nav.example.test:9443", "https://nav.example.test:5000/"},
+	} {
+		t.Run(tc.address, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.address, nil)
+			r.RemoteAddr = "127.0.0.1:1234"
+			r.Header.Set("X-Forwarded-Proto", tc.proto)
+			info := ParseRequestURLTo(r)
+			if info.Hostname != tc.hostname || info.Port != tc.port || info.Origin != tc.origin || info.Href != tc.origin+"/path?q=1" {
+				t.Fatalf("unexpected dynamic URL: %+v", info)
+			}
+			expanded := ParseDynamicUrlWith("{protocol}//{hostname}:5000/", &info)
+			if expanded != tc.expanded {
+				t.Fatalf("expanded=%q, want %q", expanded, tc.expanded)
+			}
+			parsed, err := url.Parse(expanded)
+			if err != nil || parsed.Port() != "5000" {
+				t.Fatalf("invalid expanded URL: %s, %v", expanded, err)
+			}
+		})
+	}
+}
+
+func TestDynamicURLUsesForwardedHostOnlyFromTrustedProxy(t *testing.T) {
+	for _, tc := range []struct {
+		name, peer, forwardedHost, wantHost, wantOrigin string
+	}{
+		{"trusted", "127.0.0.1:1234", "nav.example.test:9443", "nav.example.test:9443", "https://nav.example.test:9443"},
+		{"untrusted", "93.184.216.34:1234", "attacker.example.test", "internal.example.test", "http://internal.example.test"},
+		{"unsafe", "127.0.0.1:1234", "attacker.example.test/path", "internal.example.test", "https://internal.example.test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://internal.example.test/path", nil)
+			r.RemoteAddr = tc.peer
+			r.Header.Set("X-Forwarded-Host", tc.forwardedHost)
+			r.Header.Set("X-Forwarded-Proto", "https")
+			if tc.name == "untrusted" {
+				r = netutil.WithTrustedProxies(r, netutil.TrustedProxies{})
+			} else {
+				proxies, err := netutil.ParseTrustedProxies("")
+				if err != nil {
+					t.Fatal(err)
+				}
+				r = netutil.WithTrustedProxies(r, proxies)
+			}
+			info := ParseRequestURLTo(r)
+			if info.Host != tc.wantHost || info.Origin != tc.wantOrigin {
+				t.Fatalf("Host=%q Origin=%q, want %q %q", info.Host, info.Origin, tc.wantHost, tc.wantOrigin)
+			}
+		})
 	}
 }
 
@@ -122,9 +185,14 @@ func TestLocalURLMayShareNetworkWithHost(t *testing.T) {
 }
 
 func TestRequestClientHostUsesForwardedHeaders(t *testing.T) {
-	req, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
-	req.RemoteAddr = "127.0.0.1:54321"
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.RemoteAddr = "10.1.2.3:54321"
 	req.Header.Set("X-Forwarded-For", "192.168.2.77, 10.0.0.1")
+	proxies, err := netutil.ParseTrustedProxies("10.1.0.0/16")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = netutil.WithTrustedProxies(req, proxies)
 	if got := RequestClientHost(req); got != "192.168.2.77" {
 		t.Fatalf("expected first forwarded client host, got %q", got)
 	}
@@ -135,8 +203,23 @@ func TestRequestLooksLocalNetworkUsesForwardedClient(t *testing.T) {
 	req.Host = "superflare.example.com"
 	req.RemoteAddr = "127.0.0.1:54321"
 	req.Header.Set("X-Forwarded-For", "192.168.2.77")
+	proxies, err := netutil.ParseTrustedProxies("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = netutil.WithTrustedProxies(req, proxies)
 	if !RequestLooksLocalNetwork(req) {
 		t.Fatal("expected forwarded private client address to look local")
+	}
+}
+
+func TestRequestClientHostIgnoresForwardedHeadersFromUntrustedPeers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.RemoteAddr = "93.184.216.34:54321"
+	req.Header.Set("X-Forwarded-For", "192.168.2.77")
+	req.Header.Set("X-Real-IP", "10.0.0.9")
+	if got := RequestClientHost(req); got != "93.184.216.34" {
+		t.Fatalf("untrusted forwarded headers changed client host to %q", got)
 	}
 }
 

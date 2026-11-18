@@ -1,6 +1,7 @@
 package data
 
 import (
+	"crypto/sha256"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -16,25 +17,97 @@ import (
 )
 
 const editorFixedCategory = "[SuperFlare \u5e94\u7528]"
+const editorUngroupedCategory = "[SuperFlare \u672a\u5206\u7c7b]"
+
+type editorBookmark struct {
+	model.Bookmark
+	IsApplication bool
+}
 
 var editorDataRenamePath = os.Rename
 
+var ErrEditorRevisionConflict = errors.New("editor data has changed since it was loaded")
+
+type EditorSnapshot struct {
+	Categories string
+	Bookmarks  string
+	Revision   string
+}
+
 func GetBookmarksForEditor() (categories string, bookmarks string, err error) {
-	favoriteBookmarks, err := LoadFavoriteBookmarks()
+	snapshot, err := GetEditorSnapshot()
+	return snapshot.Categories, snapshot.Bookmarks, err
+}
+
+func GetEditorSnapshot() (snapshot EditorSnapshot, err error) {
+	err = withConfigWriteLock(func() error {
+		appsRaw, bookmarksRaw, err := readEditorBookmarkFiles()
+		if err != nil {
+			return err
+		}
+		snapshot.Categories, snapshot.Bookmarks, err = editorBookmarksJSON(appsRaw, bookmarksRaw)
+		if err != nil {
+			return err
+		}
+		snapshot.Revision = editorBookmarkRevision(appsRaw, bookmarksRaw)
+		return nil
+	})
+	return snapshot, err
+}
+
+// Read and hash the same bytes that populate the editor, under the save lock.
+func readEditorBookmarkFiles() (appsRaw, bookmarksRaw []byte, err error) {
+	appsPath, err := configPath("apps")
+	if err != nil {
+		return nil, nil, err
+	}
+	appsRaw, err = readFile(appsPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load favorite bookmarks for editor failed: %w", err)
+	}
+	bookmarksPath, err := configPath("bookmarks")
+	if err != nil {
+		return nil, nil, err
+	}
+	bookmarksRaw, err = readFile(bookmarksPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load normal bookmarks for editor failed: %w", err)
+	}
+	return appsRaw, bookmarksRaw, nil
+}
+
+func editorBookmarkRevision(appsRaw, bookmarksRaw []byte) string {
+	hash := sha256.New()
+	fmt.Fprintf(hash, "%d:", len(appsRaw))
+	hash.Write(appsRaw)
+	hash.Write(bookmarksRaw)
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+func editorBookmarksJSON(appsRaw, bookmarksRaw []byte) (categories string, bookmarks string, err error) {
+	favoriteBookmarks, err := loadBookmarksFromRaw(appsRaw, true)
 	if err != nil {
 		return "", "", fmt.Errorf("load favorite bookmarks for editor failed: %w", err)
 	}
-	normalBookmarks, err := LoadNormalBookmarks()
+	normalBookmarks, err := loadBookmarksFromRaw(bookmarksRaw, false)
 	if err != nil {
 		return "", "", fmt.Errorf("load normal bookmarks for editor failed: %w", err)
 	}
-
-	mixedBookmarks := make([]model.Bookmark, 0, len(favoriteBookmarks.Items)+len(normalBookmarks.Items))
-	for _, item := range favoriteBookmarks.Items {
-		item.Category = "_FLARE_FIXED_CATEGORY"
-		mixedBookmarks = append(mixedBookmarks, item)
+	for index := range normalBookmarks.Categories {
+		normalBookmarks.Categories[index].ID = strings.TrimSpace(normalBookmarks.Categories[index].ID)
+		normalBookmarks.Categories[index].Name = strings.TrimSpace(normalBookmarks.Categories[index].Name)
 	}
-	mixedBookmarks = append(mixedBookmarks, normalBookmarks.Items...)
+	for index := range normalBookmarks.Items {
+		normalBookmarks.Items[index].Category = strings.TrimSpace(normalBookmarks.Items[index].Category)
+	}
+
+	mixedBookmarks := make([]editorBookmark, 0, len(favoriteBookmarks.Items)+len(normalBookmarks.Items))
+	for _, item := range favoriteBookmarks.Items {
+		mixedBookmarks = append(mixedBookmarks, editorBookmark{Bookmark: item, IsApplication: true})
+	}
+	for _, item := range normalBookmarks.Items {
+		mixedBookmarks = append(mixedBookmarks, editorBookmark{Bookmark: item})
+	}
 
 	categories, err = jsonStringify(normalBookmarks.Categories)
 	if err != nil {
@@ -80,7 +153,7 @@ func getCategoriesFromCSV(input string) (result []model.Category, err error) {
 		if item.ID == "" || item.Name == "" {
 			return result, fmt.Errorf("category row %d is incomplete: both ID and Name are required", row)
 		}
-		if item.Name == editorFixedCategory {
+		if item.Name == editorFixedCategory || item.Name == editorUngroupedCategory {
 			return result, fmt.Errorf("\u5206\u7c7b\u540d\u79f0 %q \u4e3a\u4fdd\u7559\u540d\u79f0\uff0c\u8bf7\u4f7f\u7528\u5176\u4ed6\u540d\u79f0", item.Name)
 		}
 		if _, exists := seenIDs[item.ID]; exists {
@@ -127,6 +200,11 @@ func getBookmarksFromCSV(input string, categories []model.Category) (favoriteBoo
 			return favoriteBookmarks, normalBookmarks, fmt.Errorf("bookmark row %d is incomplete: both Name and URL are required", row)
 		}
 
+		if bookmark.Category == editorUngroupedCategory {
+			bookmark.Category = ""
+			normalBookmarks = append(normalBookmarks, bookmark)
+			continue
+		}
 		if bookmark.Category == editorFixedCategory || bookmark.Category == "" {
 			bookmark.Category = ""
 			bookmark.Favorite = false
@@ -233,7 +311,16 @@ func parseBookmarkCSVRecord(record []string, row int) (model.Bookmark, error) {
 	return bookmark, nil
 }
 func UpdateBookmarksFromEditor(categoriesCSV string, bookmarksCSV string) error {
-	return withConfigWriteLock(func() error {
+	_, err := updateBookmarksFromEditor(categoriesCSV, bookmarksCSV, nil)
+	return err
+}
+
+func UpdateBookmarksFromEditorWithRevision(categoriesCSV, bookmarksCSV, revision string) (string, error) {
+	return updateBookmarksFromEditor(categoriesCSV, bookmarksCSV, &revision)
+}
+
+func updateBookmarksFromEditor(categoriesCSV, bookmarksCSV string, expectedRevision *string) (revision string, err error) {
+	err = withConfigWriteLock(func() error {
 		categories, err := getCategoriesFromCSV(categoriesCSV)
 		if err != nil {
 			log.Println("editor categories CSV parse error:", err)
@@ -246,6 +333,19 @@ func UpdateBookmarksFromEditor(categoriesCSV string, bookmarksCSV string) error 
 			return fmt.Errorf("\u89e3\u6790\u4e66\u7b7e\u6570\u636e\u5931\u8d25: %w", err)
 		}
 
+		if expectedRevision != nil {
+			if *expectedRevision == "" {
+				return ErrEditorRevisionConflict
+			}
+			appsRaw, bookmarksRaw, err := readEditorBookmarkFiles()
+			if err != nil {
+				return err
+			}
+			if *expectedRevision != editorBookmarkRevision(appsRaw, bookmarksRaw) {
+				return ErrEditorRevisionConflict
+			}
+		}
+
 		var normalBookmarks model.Bookmarks
 		normalBookmarks.Items = normal
 		normalBookmarks.Categories = categories
@@ -253,15 +353,17 @@ func UpdateBookmarksFromEditor(categoriesCSV string, bookmarksCSV string) error 
 		var favoriteBookmarks model.Bookmarks
 		favoriteBookmarks.Items = favorite
 
-		if err := saveEditorBookmarkFilesAtomically(map[string]model.Bookmarks{
+		revision, err = saveEditorBookmarkFilesAtomically(map[string]model.Bookmarks{
 			"apps":      favoriteBookmarks,
 			"bookmarks": normalBookmarks,
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("\u4fdd\u5b58\u7f16\u8f91\u6570\u636e\u5931\u8d25: %w", err)
 		}
 
 		return nil
 	})
+	return revision, err
 }
 
 type pendingEditorDataFile struct {
@@ -270,7 +372,7 @@ type pendingEditorDataFile struct {
 	backup string
 }
 
-func saveEditorBookmarkFilesAtomically(files map[string]model.Bookmarks) error {
+func saveEditorBookmarkFilesAtomically(files map[string]model.Bookmarks) (string, error) {
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -278,63 +380,40 @@ func saveEditorBookmarkFilesAtomically(files map[string]model.Bookmarks) error {
 	sort.Strings(names)
 
 	pending := make([]pendingEditorDataFile, 0, len(names))
+	rawFiles := make(map[string][]byte, len(names))
 	for _, name := range names {
 		raw, err := yaml.Marshal(files[name])
 		if err != nil {
 			cleanupPendingEditorDataFiles(pending)
-			return err
+			return "", err
+		}
+		if err := ValidateConfigFileSize(name, raw); err != nil {
+			cleanupPendingEditorDataFiles(pending)
+			return "", err
 		}
 		item, err := stagePendingEditorDataFile(name, raw)
 		if err != nil {
 			cleanupPendingEditorDataFiles(pending)
-			return err
+			return "", err
 		}
 		pending = append(pending, item)
+		rawFiles[name] = raw
 	}
 
 	for index := range pending {
 		item := &pending[index]
-		if info, err := osStat(item.target); err == nil {
-			if info.IsDir() {
-				dirErr := fmt.Errorf("target path %s is a directory, cannot overwrite bookmark config", item.target)
-				rollbackErr := rollbackPendingEditorDataFiles(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(dirErr, rollbackErr)
-				}
-				return dirErr
-			}
-			backup, err := os.CreateTemp(filepath.Dir(item.target), "."+filepath.Base(item.target)+".backup-*")
-			if err != nil {
-				rollbackErr := rollbackPendingEditorDataFiles(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
-				}
-				return err
-			}
-			item.backup = backup.Name()
-			_ = backup.Close()
-			_ = os.Remove(item.backup)
-			if err := editorDataRenamePath(item.target, item.backup); err != nil {
-				rollbackErr := rollbackPendingEditorDataFiles(pending, index-1)
-				if rollbackErr != nil {
-					return errors.Join(err, rollbackErr)
-				}
-				return err
-			}
-		} else if !os.IsNotExist(err) {
-			rollbackErr := rollbackPendingEditorDataFiles(pending, index-1)
-			if rollbackErr != nil {
-				return errors.Join(err, rollbackErr)
-			}
-			return err
+		var err error
+		item.backup, err = BackupConfigFile(item.target)
+		if err != nil {
+			return "", errors.Join(err, rollbackPendingEditorDataFiles(pending, index-1))
 		}
 
 		if err := editorDataRenamePath(item.temp, item.target); err != nil {
-			rollbackErr := rollbackPendingEditorDataFiles(pending, index)
+			rollbackErr := rollbackPendingEditorDataFiles(pending, index-1)
 			if rollbackErr != nil {
-				return errors.Join(err, rollbackErr)
+				return "", errors.Join(err, rollbackErr)
 			}
-			return err
+			return "", err
 		}
 
 		invalidateFileCachePath(item.target)
@@ -345,11 +424,15 @@ func saveEditorBookmarkFilesAtomically(files map[string]model.Bookmarks) error {
 			_ = os.Remove(item.backup)
 		}
 	}
-	return nil
+	return editorBookmarkRevision(rawFiles["apps"], rawFiles["bookmarks"]), nil
 }
 
 func stagePendingEditorDataFile(name string, raw []byte) (pendingEditorDataFile, error) {
 	target, err := configPath(name)
+	if err != nil {
+		return pendingEditorDataFile{}, err
+	}
+	mode, err := ConfigFileMode(target)
 	if err != nil {
 		return pendingEditorDataFile{}, err
 	}
@@ -368,7 +451,7 @@ func stagePendingEditorDataFile(name string, raw []byte) (pendingEditorDataFile,
 		cleanup()
 		return pendingEditorDataFile{}, err
 	}
-	if err := temp.Chmod(configFileMode); err != nil {
+	if err := temp.Chmod(mode); err != nil {
 		cleanup()
 		return pendingEditorDataFile{}, err
 	}
@@ -406,30 +489,19 @@ func rollbackPendingEditorDataFiles(items []pendingEditorDataFile, appliedIndex 
 		}
 		if index > appliedIndex {
 			if item.backup != "" {
-				if err := editorDataRenamePath(item.backup, item.target); err != nil && !os.IsNotExist(err) {
+				if err := os.Remove(item.backup); err != nil && !os.IsNotExist(err) {
 					rollbackErr = errors.Join(rollbackErr, err)
 				}
 			}
 			continue
 		}
 
-		if info, err := osStat(item.target); err == nil {
-			if info.IsDir() {
-				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("target path %s is a directory, cannot remove generated bookmark config during rollback", item.target))
-				continue
-			}
-			if err := os.Remove(item.target); err != nil && !os.IsNotExist(err) {
-				rollbackErr = errors.Join(rollbackErr, err)
-				continue
-			}
-		} else if !os.IsNotExist(err) {
-			rollbackErr = errors.Join(rollbackErr, err)
-			continue
-		}
 		if item.backup != "" {
-			if err := editorDataRenamePath(item.backup, item.target); err != nil && !os.IsNotExist(err) {
+			if err := editorDataRenamePath(item.backup, item.target); err != nil {
 				rollbackErr = errors.Join(rollbackErr, err)
 			}
+		} else if err := os.Remove(item.target); err != nil && !os.IsNotExist(err) {
+			rollbackErr = errors.Join(rollbackErr, err)
 		}
 		invalidateFileCachePath(item.target)
 	}

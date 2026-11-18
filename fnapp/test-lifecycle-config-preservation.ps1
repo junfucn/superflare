@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "test-binary.ps1")
 
 $protectedConfigFiles = @(".env", "config.yml", "apps.yml", "bookmarks.yml", "ports.yaml")
 $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
@@ -32,6 +33,17 @@ function To-ShPath([string]$Path) {
     return $Path.Replace('\', '/')
 }
 
+function Invoke-LifecycleBash([string[]]$BashArguments) {
+    # Windows PowerShell 5.1 can turn redirected stderr into a terminating error.
+    $ErrorActionPreference = "Continue"
+    $PSNativeCommandUseErrorActionPreference = $false
+    $output = @(& $bashPath @BashArguments 2>&1)
+    return [pscustomobject]@{
+        ExitCode = $LASTEXITCODE
+        Output = $output -join "`n"
+    }
+}
+
 function Write-Utf8NoBom([string]$Path, [string]$Content) {
     $parent = Split-Path -Parent $Path
     if ($parent) {
@@ -46,6 +58,8 @@ function New-LifecycleScenario([string]$Name, [bool]$WithExistingConfig) {
     $appRoot = Join-Path $root "app"
     $etcRoot = Join-Path $root "etc"
     $varRoot = Join-Path $root "var"
+    $shareRoot = Join-Path $root "shared files"
+    $null = [System.IO.Directory]::CreateDirectory($shareRoot)
     $defaultsRoot = Join-Path $appRoot "server\defaults"
     $defaultTitle = "default-title-$Name"
     $defaultApplicationSentinel = "default-application-$Name"
@@ -55,9 +69,12 @@ function New-LifecycleScenario([string]$Name, [bool]$WithExistingConfig) {
     $null = [System.IO.Directory]::CreateDirectory($defaultsRoot)
     $null = [System.IO.Directory]::CreateDirectory($etcRoot)
     $null = [System.IO.Directory]::CreateDirectory($varRoot)
+    Write-TestAppShim (Join-Path $appRoot "server/superflare") $testBinary
 
     Write-Utf8NoBom (Join-Path $defaultsRoot "config.yml") @"
 Title: '$defaultTitle'
+Theme: blackboard
+Locale: zh
 LoginUser: 'default-user'
 LoginPass: 'default-pass'
 "@
@@ -109,6 +126,9 @@ existing-port-${Name}: 9443
         AppRoot = $appRoot
         EtcRoot = $etcRoot
         VarRoot = $varRoot
+        ShareRoot = $shareRoot
+        SharedEtcRoot = Join-Path $shareRoot "data/etc"
+        SharedVarRoot = Join-Path $shareRoot "data/var"
         DefaultTitle = $defaultTitle
         DefaultApplicationSentinel = $defaultApplicationSentinel
         DefaultBookmarkSentinel = $defaultBookmarkSentinel
@@ -125,6 +145,7 @@ function Invoke-LifecycleCallback([string]$ScriptPath, [string]$ScenarioRoot, [h
         "TRIM_APPDEST",
         "TRIM_PKGETC",
         "TRIM_PKGVAR",
+        "TRIM_DATA_SHARE_PATHS",
         "TRIM_SERVICE_PORT",
         "TRIM_TEMP_LOGFILE",
         "wizard_install_login_user",
@@ -142,6 +163,7 @@ function Invoke-LifecycleCallback([string]$ScriptPath, [string]$ScenarioRoot, [h
         [System.Environment]::SetEnvironmentVariable("TRIM_APPDEST", (To-ShPath $appRoot), "Process")
         [System.Environment]::SetEnvironmentVariable("TRIM_PKGETC", (To-ShPath $etcRoot), "Process")
         [System.Environment]::SetEnvironmentVariable("TRIM_PKGVAR", (To-ShPath $varRoot), "Process")
+        [System.Environment]::SetEnvironmentVariable("TRIM_DATA_SHARE_PATHS", (To-ShPath (Join-Path $ScenarioRoot "shared files")), "Process")
         [System.Environment]::SetEnvironmentVariable("TRIM_SERVICE_PORT", "3636", "Process")
         [System.Environment]::SetEnvironmentVariable("TRIM_TEMP_LOGFILE", (To-ShPath $logPath), "Process")
 
@@ -153,16 +175,15 @@ function Invoke-LifecycleCallback([string]$ScriptPath, [string]$ScenarioRoot, [h
         }
 
         $scriptSh = To-ShPath ([System.IO.Path]::GetFullPath($ScriptPath))
-        $output = @(& $bashPath $scriptSh 2>&1)
-        $exitCode = $LASTEXITCODE
+        $result = Invoke-LifecycleBash @($scriptSh)
         if ($ExpectFailure) {
-            if ($exitCode -eq 0) {
+            if ($result.ExitCode -eq 0) {
                 throw "Lifecycle callback '$ScriptPath' unexpectedly succeeded."
             }
             return
         }
-        if ($exitCode -ne 0) {
-            throw "Lifecycle callback '$ScriptPath' failed with code $exitCode`n$($output -join "`n")"
+        if ($result.ExitCode -ne 0) {
+            throw "Lifecycle callback '$ScriptPath' failed with code $($result.ExitCode)`n$($result.Output)"
         }
     }
     finally {
@@ -294,6 +315,11 @@ if (-not $cleanupRootVerified) {
 try {
     $null = [System.IO.Directory]::CreateDirectory($tempRoot)
     $bashPath = Resolve-GitBash
+    $testBinary = Build-TestAppBinary $tempRoot
+    $resource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "superflare/config/resource") | ConvertFrom-Json
+    if ($resource.'data-share'.shares.Count -ne 1 -or $resource.'data-share'.shares[0].name -ne "superflare") {
+        throw "The package must register exactly one superflare application shared folder."
+    }
 
     $installHarnessRoot = Join-Path $tempRoot "install-write-failure-harness"
     $installHarnessCallback = Join-Path $installHarnessRoot "install_callback"
@@ -303,6 +329,7 @@ try {
     Copy-Item -LiteralPath $installCallback -Destination $installHarnessCallback
     Write-Utf8NoBom $installHarnessCommon @'
 has_existing_runtime_config() { return 1; }
+trim_value() { printf '%s' "$1"; }
 ensure_runtime_layout() { return 0; }
 sync_login_config() { return 1; }
 log_info() { :; }
@@ -310,11 +337,14 @@ log_lifecycle() { printf '%s\n' "$*" >> "${HARNESS_LOG}"; }
 '@
     $installHarnessCallbackSh = To-ShPath $installHarnessCallback
     $installHarnessLogSh = To-ShPath $installHarnessLog
-    & $bashPath -c "chmod +x '$installHarnessCallbackSh'"
+    $chmodResult = Invoke-LifecycleBash @("-c", "chmod +x '$installHarnessCallbackSh'")
+    if ($chmodResult.ExitCode -ne 0) {
+        throw "Failed to make the install test harness executable.`n$($chmodResult.Output)"
+    }
     $installHarnessCommand = "HARNESS_LOG='$installHarnessLogSh' wizard_install_login_user='write-failure-user' wizard_install_login_pass='write-failure-pass' wizard_install_login_pass_confirm='write-failure-pass' '$installHarnessCallbackSh'"
-    $installHarnessOutput = @(& $bashPath -c $installHarnessCommand 2>&1)
-    if ($LASTEXITCODE -eq 0) {
-        throw "install_callback succeeded when credential synchronization failed.`n$($installHarnessOutput -join "`n")"
+    $installHarnessResult = Invoke-LifecycleBash @("-c", $installHarnessCommand)
+    if ($installHarnessResult.ExitCode -eq 0) {
+        throw "install_callback succeeded when credential synchronization failed.`n$($installHarnessResult.Output)"
     }
     if (-not (Test-Path -LiteralPath $installHarnessLog -PathType Leaf) -or
         (Get-Content -Raw -LiteralPath $installHarnessLog) -notmatch [regex]::Escape("Failed to apply install login settings.")) {
@@ -331,20 +361,84 @@ log_lifecycle() { printf '%s\n' "$*" >> "${HARNESS_LOG}"; }
         wizard_install_login_pass = "replacement-pass"
         wizard_install_login_pass_confirm = "replacement-pass"
     }
-    Assert-HashesEqual $before (Get-ConfigHashes $existingInstall.EtcRoot) "repeated install"
+    Assert-HashesEqual $before (Get-ConfigHashes $existingInstall.SharedEtcRoot) "repeated install"
+    Assert-HashesEqual $before (Get-ConfigHashes $existingInstall.EtcRoot) "install legacy source preservation"
 
     $before = Get-ConfigHashes $existingUpgrade.EtcRoot
+    $legacyPayload = @{
+        "uploads/background/image.jpg" = "uploaded-background"
+        "cache/site-icons/example.svg" = "cached-icon"
+        "run/previous.log" = "previous-log"
+        "backups/custom.zip" = "user-backup"
+        ".hidden-state" = "hidden-state"
+    }
+    foreach ($entry in $legacyPayload.GetEnumerator()) {
+        Write-Utf8NoBom (Join-Path $existingUpgrade.VarRoot $entry.Key) $entry.Value
+    }
     Invoke-LifecycleCallback $upgradeCallback $existingUpgrade.Root @{}
-    Assert-HashesEqual $before (Get-ConfigHashes $existingUpgrade.EtcRoot) "upgrade"
+    Assert-HashesEqual $before (Get-ConfigHashes $existingUpgrade.SharedEtcRoot) "upgrade"
+    Assert-HashesEqual $before (Get-ConfigHashes $existingUpgrade.EtcRoot) "upgrade legacy source preservation"
+    foreach ($entry in $legacyPayload.GetEnumerator()) {
+        $source = Join-Path $existingUpgrade.VarRoot $entry.Key
+        Assert-FileHashEqual (Join-Path $existingUpgrade.SharedVarRoot $entry.Key) (Get-FileHash -LiteralPath $source).Hash "upgrade all runtime files"
+    }
+
+    $sharedBookmark = Join-Path $existingUpgrade.SharedEtcRoot "bookmarks.yml"
+    Write-Utf8NoBom $sharedBookmark "# updated after shared migration`n"
+    $sharedBookmarkHash = (Get-FileHash -LiteralPath $sharedBookmark).Hash
+    Invoke-LifecycleCallback $upgradeCallback $existingUpgrade.Root @{}
+    Invoke-LifecycleCallback $installCallback $existingUpgrade.Root @{
+        wizard_install_login_user = "replacement-user"
+        wizard_install_login_pass = "replacement-pass"
+        wizard_install_login_pass_confirm = "replacement-pass"
+    }
+    Assert-FileHashEqual $sharedBookmark $sharedBookmarkHash "replayed migration must not overwrite shared data"
+    Assert-EnvValue (Join-Path $existingUpgrade.SharedEtcRoot ".env") "FLARE_USER" "existing-user-existing-upgrade" "replayed install shared credentials"
+
+    $failedCopy = New-LifecycleScenario "failed-shared-copy" $true
+    $failedCopyHashes = Get-ConfigHashes $failedCopy.EtcRoot
+    $copyHarnessRoot = Join-Path $tempRoot "copy-failure-harness"
+    $null = [System.IO.Directory]::CreateDirectory($copyHarnessRoot)
+    $copyHarnessCallback = Join-Path $copyHarnessRoot "upgrade_callback"
+    Copy-Item -LiteralPath $upgradeCallback -Destination $copyHarnessCallback
+    $commonSh = To-ShPath (Join-Path $PSScriptRoot "superflare/cmd/common.sh")
+    Write-Utf8NoBom (Join-Path $copyHarnessRoot "common.sh") @"
+. '$commonSh'
+cp() { return 73; }
+"@
+    Invoke-LifecycleCallback $copyHarnessCallback $failedCopy.Root @{} $true
+    Assert-HashesEqual $failedCopyHashes (Get-ConfigHashes $failedCopy.EtcRoot) "failed migration source preservation"
+    if (Test-Path -LiteralPath (Join-Path $failedCopy.ShareRoot "data")) {
+        throw "A failed copy published incomplete shared storage."
+    }
+    Invoke-LifecycleCallback $upgradeCallback $failedCopy.Root @{}
+    Assert-HashesEqual $failedCopyHashes (Get-ConfigHashes $failedCopy.SharedEtcRoot) "migration retry after failed copy"
+
+    $occupiedShare = New-LifecycleScenario "occupied-shared-storage" $true
+    $occupiedMarker = Join-Path $occupiedShare.SharedVarRoot "restored.txt"
+    Write-Utf8NoBom $occupiedMarker "restored application files`n"
+    $occupiedHash = (Get-FileHash -LiteralPath $occupiedMarker).Hash
+    Invoke-LifecycleCallback $upgradeCallback $occupiedShare.Root @{} $true
+    Assert-FileHashEqual $occupiedMarker $occupiedHash "unmarked shared data preservation"
+    if (Test-Path -LiteralPath (Join-Path $occupiedShare.ShareRoot "data/.shared-storage")) {
+        throw "An occupied shared folder was incorrectly marked as migrated."
+    }
+
+    $missingSharedData = New-LifecycleScenario "missing-shared-data" $true
+    Write-Utf8NoBom (Join-Path $missingSharedData.ShareRoot "data/.shared-storage") "superflare-shared-storage-v1`n"
+    Invoke-LifecycleCallback $upgradeCallback $missingSharedData.Root @{} $true
+    if (Test-Path -LiteralPath (Join-Path $missingSharedData.SharedEtcRoot "config.yml")) {
+        throw "Missing shared storage was silently replaced with legacy or default configuration."
+    }
 
     Invoke-LifecycleCallback $installCallback $freshInstall.Root @{
         wizard_install_login_user = "fresh-user"
         wizard_install_login_pass = "fresh-pass"
         wizard_install_login_pass_confirm = "fresh-pass"
     }
-    $null = Get-ConfigHashes $freshInstall.EtcRoot
-    $freshEnv = Join-Path $freshInstall.EtcRoot ".env"
-    $freshConfig = Join-Path $freshInstall.EtcRoot "config.yml"
+    $null = Get-ConfigHashes $freshInstall.SharedEtcRoot
+    $freshEnv = Join-Path $freshInstall.SharedEtcRoot ".env"
+    $freshConfig = Join-Path $freshInstall.SharedEtcRoot "config.yml"
     Assert-EnvValue $freshEnv "FLARE_PORT" "3636" "fresh install service port"
     Assert-EnvValue $freshEnv "FLARE_DISABLE_LOGIN" "false" "fresh install login flag"
     Assert-EnvValue $freshEnv "FLARE_EDITOR" "true" "fresh install editor flag"
@@ -356,12 +450,22 @@ log_lifecycle() { printf '%s\n' "$*" >> "${HARNESS_LOG}"; }
     Assert-YamlValue $freshConfig "Title" $freshInstall.DefaultTitle "fresh install config title"
     Assert-YamlValue $freshConfig "LoginUser" "fresh-user" "fresh install config username"
     Assert-YamlValue $freshConfig "LoginPass" "fresh-pass" "fresh install config password"
-    Assert-YamlValue (Join-Path $freshInstall.EtcRoot "apps.yml") "- name" $freshInstall.DefaultApplicationSentinel "fresh install application defaults"
-    Assert-YamlValue (Join-Path $freshInstall.EtcRoot "bookmarks.yml") "- name" $freshInstall.DefaultBookmarkSentinel "fresh install bookmark defaults"
-    Assert-YamlValue (Join-Path $freshInstall.EtcRoot "ports.yaml") $freshInstall.DefaultPortSentinel "7000" "fresh install port defaults"
+    Assert-YamlValue (Join-Path $freshInstall.SharedEtcRoot "apps.yml") "- name" $freshInstall.DefaultApplicationSentinel "fresh install application defaults"
+    Assert-YamlValue (Join-Path $freshInstall.SharedEtcRoot "bookmarks.yml") "- name" $freshInstall.DefaultBookmarkSentinel "fresh install bookmark defaults"
+    Assert-YamlValue (Join-Path $freshInstall.SharedEtcRoot "ports.yaml") $freshInstall.DefaultPortSentinel "7000" "fresh install port defaults"
+    foreach ($directory in @("run", "home", "tmp", "cache/backgrounds", "cache/site-icons", "uploads")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $freshInstall.SharedVarRoot $directory) -PathType Container)) {
+            throw "Shared runtime directory missing: $directory"
+        }
+    }
+    if (@(Get-ChildItem -LiteralPath $freshInstall.EtcRoot -Force).Count -gt 0 -or
+        @(Get-ChildItem -LiteralPath $freshInstall.VarRoot -Force).Count -gt 0) {
+        throw "A fresh install wrote application data into legacy package directories."
+    }
 
     $danglingEnv = New-LifecycleScenario "dangling-env-install" $false
-    $danglingEnvPath = Join-Path $danglingEnv.EtcRoot ".env"
+    Invoke-LifecycleCallback (Join-Path $PSScriptRoot "superflare/cmd/config_init") $danglingEnv.Root @{}
+    $danglingEnvPath = Join-Path $danglingEnv.SharedEtcRoot ".env"
     $danglingEnvTarget = Join-Path $danglingEnv.Root "dangling-env-target"
     $danglingEnvLog = Join-Path $danglingEnv.Root "lifecycle.log"
     $null = [System.IO.Directory]::CreateDirectory($danglingEnvTarget)
@@ -404,8 +508,8 @@ LoginUser: 'partial-custom-user'
         wizard_install_login_pass = "replacement-pass"
         wizard_install_login_pass_confirm = "replacement-pass"
     }
-    $partialEnv = Join-Path $partialInstall.EtcRoot ".env"
-    $partialConfig = Join-Path $partialInstall.EtcRoot "config.yml"
+    $partialEnv = Join-Path $partialInstall.SharedEtcRoot ".env"
+    $partialConfig = Join-Path $partialInstall.SharedEtcRoot "config.yml"
     Assert-EnvValue $partialEnv "FLARE_PORT" "9443" "partial install service port"
     Assert-EnvValue $partialEnv "FLARE_DISABLE_LOGIN" "false" "partial install login flag repair"
     Assert-EnvValue $partialEnv "FLARE_EDITOR" "true" "partial install editor flag repair"
@@ -417,9 +521,9 @@ LoginUser: 'partial-custom-user'
     Assert-YamlValue $partialConfig "Title" "partial-title" "partial install config title"
     Assert-YamlValue $partialConfig "LoginUser" "partial-custom-user" "partial install config username"
     Assert-YamlValue $partialConfig "LoginPass" "admin" "partial install config password repair"
-    Assert-YamlValue (Join-Path $partialInstall.EtcRoot "apps.yml") "- name" $partialInstall.DefaultApplicationSentinel "partial install application defaults"
-    Assert-YamlValue (Join-Path $partialInstall.EtcRoot "bookmarks.yml") "- name" $partialInstall.DefaultBookmarkSentinel "partial install bookmark defaults"
-    Assert-YamlValue (Join-Path $partialInstall.EtcRoot "ports.yaml") $partialInstall.DefaultPortSentinel "7000" "partial install port defaults"
+    Assert-YamlValue (Join-Path $partialInstall.SharedEtcRoot "apps.yml") "- name" $partialInstall.DefaultApplicationSentinel "partial install application defaults"
+    Assert-YamlValue (Join-Path $partialInstall.SharedEtcRoot "bookmarks.yml") "- name" $partialInstall.DefaultBookmarkSentinel "partial install bookmark defaults"
+    Assert-YamlValue (Join-Path $partialInstall.SharedEtcRoot "ports.yaml") $partialInstall.DefaultPortSentinel "7000" "partial install port defaults"
 
     $partialUpgrade = New-LifecycleScenario "partial-upgrade" $false
     Write-Utf8NoBom (Join-Path $partialUpgrade.EtcRoot ".env") @"
@@ -434,8 +538,8 @@ Title: 'partial-upgrade-title'
 LoginUser: 'partial-upgrade-user'
 "@
     Invoke-LifecycleCallback $upgradeCallback $partialUpgrade.Root @{}
-    $partialUpgradeEnv = Join-Path $partialUpgrade.EtcRoot ".env"
-    $partialUpgradeConfig = Join-Path $partialUpgrade.EtcRoot "config.yml"
+    $partialUpgradeEnv = Join-Path $partialUpgrade.SharedEtcRoot ".env"
+    $partialUpgradeConfig = Join-Path $partialUpgrade.SharedEtcRoot "config.yml"
     Assert-EnvValue $partialUpgradeEnv "FLARE_PORT" "9443" "partial upgrade service port"
     Assert-EnvValue $partialUpgradeEnv "FLARE_DISABLE_LOGIN" "false" "partial upgrade login flag repair"
     Assert-EnvValue $partialUpgradeEnv "FLARE_EDITOR" "true" "partial upgrade editor flag repair"
@@ -447,9 +551,9 @@ LoginUser: 'partial-upgrade-user'
     Assert-YamlValue $partialUpgradeConfig "Title" "partial-upgrade-title" "partial upgrade config title"
     Assert-YamlValue $partialUpgradeConfig "LoginUser" "partial-upgrade-user" "partial upgrade config username"
     Assert-YamlValue $partialUpgradeConfig "LoginPass" "admin" "partial upgrade config password repair"
-    Assert-YamlValue (Join-Path $partialUpgrade.EtcRoot "apps.yml") "- name" $partialUpgrade.DefaultApplicationSentinel "partial upgrade application defaults"
-    Assert-YamlValue (Join-Path $partialUpgrade.EtcRoot "bookmarks.yml") "- name" $partialUpgrade.DefaultBookmarkSentinel "partial upgrade bookmark defaults"
-    Assert-YamlValue (Join-Path $partialUpgrade.EtcRoot "ports.yaml") $partialUpgrade.DefaultPortSentinel "7000" "partial upgrade port defaults"
+    Assert-YamlValue (Join-Path $partialUpgrade.SharedEtcRoot "apps.yml") "- name" $partialUpgrade.DefaultApplicationSentinel "partial upgrade application defaults"
+    Assert-YamlValue (Join-Path $partialUpgrade.SharedEtcRoot "bookmarks.yml") "- name" $partialUpgrade.DefaultBookmarkSentinel "partial upgrade bookmark defaults"
+    Assert-YamlValue (Join-Path $partialUpgrade.SharedEtcRoot "ports.yaml") $partialUpgrade.DefaultPortSentinel "7000" "partial upgrade port defaults"
 
     $partialLegacy = New-LifecycleScenario "partial-legacy-install" $false
     $partialLegacyRoot = Join-Path $partialLegacy.VarRoot "runtime"
@@ -466,13 +570,11 @@ LoginPass: 'partial-legacy-pass'
         wizard_install_login_pass = "replacement-pass"
         wizard_install_login_pass_confirm = "replacement-pass"
     }
-    $partialLegacyEnv = Join-Path $partialLegacy.EtcRoot ".env"
-    $migratedPartialLegacyConfig = Join-Path $partialLegacy.EtcRoot "config.yml"
-    $null = Get-ConfigHashes $partialLegacy.EtcRoot
+    $partialLegacyEnv = Join-Path $partialLegacy.SharedEtcRoot ".env"
+    $migratedPartialLegacyConfig = Join-Path $partialLegacy.SharedEtcRoot "config.yml"
+    $null = Get-ConfigHashes $partialLegacy.SharedEtcRoot
     Assert-FileHashEqual $migratedPartialLegacyConfig $partialLegacyConfigHash "partial legacy config migration"
-    if (Test-Path -LiteralPath $partialLegacyConfig) {
-        throw "partial legacy install did not move config.yml into etc."
-    }
+    Assert-FileHashEqual $partialLegacyConfig $partialLegacyConfigHash "partial legacy source preservation"
     Assert-EnvValue $partialLegacyEnv "FLARE_PORT" "3636" "partial legacy install service port repair"
     Assert-EnvValue $partialLegacyEnv "FLARE_DISABLE_LOGIN" "false" "partial legacy install login flag repair"
     Assert-EnvValue $partialLegacyEnv "FLARE_EDITOR" "true" "partial legacy install editor flag repair"
@@ -484,9 +586,9 @@ LoginPass: 'partial-legacy-pass'
     Assert-YamlValue $migratedPartialLegacyConfig "Title" "partial-legacy-title" "partial legacy config title"
     Assert-YamlValue $migratedPartialLegacyConfig "LoginUser" "partial-legacy-user" "partial legacy config username"
     Assert-YamlValue $migratedPartialLegacyConfig "LoginPass" "partial-legacy-pass" "partial legacy config password"
-    Assert-YamlValue (Join-Path $partialLegacy.EtcRoot "apps.yml") "- name" $partialLegacy.DefaultApplicationSentinel "partial legacy application defaults"
-    Assert-YamlValue (Join-Path $partialLegacy.EtcRoot "bookmarks.yml") "- name" $partialLegacy.DefaultBookmarkSentinel "partial legacy bookmark defaults"
-    Assert-YamlValue (Join-Path $partialLegacy.EtcRoot "ports.yaml") $partialLegacy.DefaultPortSentinel "7000" "partial legacy port defaults"
+    Assert-YamlValue (Join-Path $partialLegacy.SharedEtcRoot "apps.yml") "- name" $partialLegacy.DefaultApplicationSentinel "partial legacy application defaults"
+    Assert-YamlValue (Join-Path $partialLegacy.SharedEtcRoot "bookmarks.yml") "- name" $partialLegacy.DefaultBookmarkSentinel "partial legacy bookmark defaults"
+    Assert-YamlValue (Join-Path $partialLegacy.SharedEtcRoot "ports.yaml") $partialLegacy.DefaultPortSentinel "7000" "partial legacy port defaults"
 
     $legacyOnly = New-LifecycleScenario "legacy-only" $false
     $legacyRoot = Join-Path $legacyOnly.VarRoot "runtime"
@@ -516,17 +618,16 @@ LoginPass: 'legacy-pass'
         wizard_install_login_pass = "replacement-pass"
         wizard_install_login_pass_confirm = "replacement-pass"
     }
-    Assert-HashesEqual $legacyHashes (Get-ConfigHashes $legacyOnly.EtcRoot) "legacy-only install migration"
-    foreach ($name in $protectedConfigFiles) {
-        if (Test-Path -LiteralPath (Join-Path $legacyRoot $name)) {
-            throw "legacy-only install did not move '$name' into etc."
-        }
-    }
-    Assert-EnvValue (Join-Path $legacyOnly.EtcRoot ".env") "FLARE_USER" "legacy-user" "legacy-only install .env username"
-    Assert-YamlValue (Join-Path $legacyOnly.EtcRoot "config.yml") "LoginUser" "legacy-user" "legacy-only install config username"
+    Assert-HashesEqual $legacyHashes (Get-ConfigHashes $legacyOnly.SharedEtcRoot) "legacy-only install migration"
+    Assert-HashesEqual $legacyHashes (Get-ConfigHashes $legacyRoot) "legacy runtime source preservation"
+    Assert-EnvValue (Join-Path $legacyOnly.SharedEtcRoot ".env") "FLARE_USER" "legacy-user" "legacy-only install .env username"
+    Assert-YamlValue (Join-Path $legacyOnly.SharedEtcRoot "config.yml") "LoginUser" "legacy-user" "legacy-only install config username"
 
     $junctionLegacy = New-LifecycleScenario "junction-legacy-install" $false
-    $junctionLegacyRoot = Join-Path $junctionLegacy.VarRoot "runtime"
+    # Git Bash cp emulates symlinks as copies without Windows symlink privileges.
+    # Exercise the native Junction guard after preparing the shared layout.
+    Invoke-LifecycleCallback (Join-Path $PSScriptRoot "superflare/cmd/config_init") $junctionLegacy.Root @{}
+    $junctionLegacyRoot = Join-Path $junctionLegacy.SharedVarRoot "runtime"
     $junctionLegacyTarget = Join-Path $junctionLegacy.Root "operator-legacy-target"
     $junctionLegacyTargetConfig = Join-Path $junctionLegacyTarget "config.yml"
     $null = [System.IO.Directory]::CreateDirectory($junctionLegacyTarget)
@@ -545,11 +646,11 @@ LoginPass: 'operator-junction-pass'
         wizard_install_login_pass = "junction-fresh-pass"
         wizard_install_login_pass_confirm = "junction-fresh-pass"
     }
-    $null = Get-ConfigHashes $junctionLegacy.EtcRoot
-    Assert-EnvValue (Join-Path $junctionLegacy.EtcRoot ".env") "FLARE_USER" "junction-fresh-user" "junction-backed legacy install .env username"
-    Assert-EnvValue (Join-Path $junctionLegacy.EtcRoot ".env") "FLARE_PASS" "junction-fresh-pass" "junction-backed legacy install .env password"
-    Assert-YamlValue (Join-Path $junctionLegacy.EtcRoot "config.yml") "LoginUser" "junction-fresh-user" "junction-backed legacy install config username"
-    Assert-YamlValue (Join-Path $junctionLegacy.EtcRoot "config.yml") "LoginPass" "junction-fresh-pass" "junction-backed legacy install config password"
+    $null = Get-ConfigHashes $junctionLegacy.SharedEtcRoot
+    Assert-EnvValue (Join-Path $junctionLegacy.SharedEtcRoot ".env") "FLARE_USER" "junction-fresh-user" "junction-backed legacy install .env username"
+    Assert-EnvValue (Join-Path $junctionLegacy.SharedEtcRoot ".env") "FLARE_PASS" "junction-fresh-pass" "junction-backed legacy install .env password"
+    Assert-YamlValue (Join-Path $junctionLegacy.SharedEtcRoot "config.yml") "LoginUser" "junction-fresh-user" "junction-backed legacy install config username"
+    Assert-YamlValue (Join-Path $junctionLegacy.SharedEtcRoot "config.yml") "LoginPass" "junction-fresh-pass" "junction-backed legacy install config password"
     Assert-FileHashEqual $junctionLegacyTargetConfig $junctionLegacyTargetHash "junction-backed legacy target config"
     if ((Get-Item -LiteralPath $junctionLegacyRoot).LinkType -ne "Junction") {
         throw "Install did not preserve the legacy runtime Junction."
@@ -568,6 +669,8 @@ LoginPass: 'operator-junction-pass'
     $legacyConflictHash = (Get-FileHash -LiteralPath $legacyConflictBookmark -Algorithm SHA256).Hash
     $currentConflictHash = (Get-FileHash -LiteralPath $currentConflictBookmark -Algorithm SHA256).Hash
     Invoke-LifecycleCallback $upgradeCallback $legacyConflict.Root @{}
+    Assert-FileHashEqual (Join-Path $legacyConflict.SharedEtcRoot "bookmarks.yml") $currentConflictHash "shared current bookmark conflict copy"
+    Assert-FileHashEqual (Join-Path $legacyConflict.SharedVarRoot "runtime/bookmarks.yml") $legacyConflictHash "shared legacy bookmark conflict copy"
     Assert-FileHashEqual $currentConflictBookmark $currentConflictHash "upgrade current bookmark conflict copy"
     Assert-FileHashEqual $legacyConflictBookmark $legacyConflictHash "upgrade legacy bookmark conflict copy"
 
@@ -587,11 +690,11 @@ LoginPass: 'operator-junction-pass'
     $runtimeMarkerHash = (Get-FileHash -LiteralPath $runtimeMarker -Algorithm SHA256).Hash
     Invoke-LifecycleCallback $upgradeCallback $realVar.Root @{}
     Assert-FileHashEqual $collisionMarker $collisionMarkerHash "upgrade existing var preservation collision"
-    $preservedVarPath = Find-PreservedLinkPath $realVar.EtcRoot
+    $preservedVarPath = Find-PreservedLinkPath $realVar.SharedEtcRoot
     if (-not $preservedVarPath) {
         throw "upgrade did not preserve the displaced real etc/var under a unique var.pre-superflare-link.N path."
     }
-    $expectedPreservedVarPath = "$collisionPath.1"
+    $expectedPreservedVarPath = Join-Path $realVar.SharedEtcRoot "var.pre-superflare-link.1"
     if ($preservedVarPath -ne $expectedPreservedVarPath) {
         throw "upgrade preserved real etc/var at '$preservedVarPath'; expected first free collision suffix '$expectedPreservedVarPath'."
     }
@@ -599,8 +702,8 @@ LoginPass: 'operator-junction-pass'
     if (-not (Test-Path -LiteralPath $realVarPath -PathType Container)) {
         throw "upgrade did not recreate etc/var as the managed runtime container after preserving operator data."
     }
-    Assert-FileHashEqual (Join-Path $realVarPath "managed-runtime-marker.txt") $runtimeMarkerHash "upgrade managed runtime projection"
-    if (Test-Path -LiteralPath $realVarMarker) {
+    Assert-FileHashEqual (Join-Path $realVar.SharedEtcRoot "var/managed-runtime-marker.txt") $runtimeMarkerHash "upgrade managed runtime projection"
+    if (Test-Path -LiteralPath (Join-Path $realVar.SharedEtcRoot "var/operator-var-marker.txt")) {
         throw "upgrade left displaced operator data under the managed etc/var runtime path."
     }
 
@@ -611,6 +714,9 @@ LoginPass: 'operator-junction-pass'
     $uninstallLegacyMarker = Join-Path $uninstallLegacyRoot "config.yml"
     $null = [System.IO.Directory]::CreateDirectory($uninstallVarPath)
     $null = [System.IO.Directory]::CreateDirectory($uninstallLegacyRoot)
+    $uninstallSharedVarPath = Join-Path $uninstall.SharedEtcRoot "var"
+    $null = [System.IO.Directory]::CreateDirectory($uninstallSharedVarPath)
+    Write-Utf8NoBom (Join-Path $uninstallSharedVarPath "shared-uninstall-marker.txt") "shared-data`n"
     Write-Utf8NoBom $uninstallVarMarker "operator-uninstall-data-sentinel`n"
     Write-Utf8NoBom $uninstallLegacyMarker "# legacy-uninstall-config-sentinel`n"
     $uninstallVarHash = (Get-FileHash -LiteralPath $uninstallVarMarker -Algorithm SHA256).Hash
@@ -618,13 +724,17 @@ LoginPass: 'operator-junction-pass'
     Invoke-LifecycleCallback $uninstallCallback $uninstall.Root @{}
     Assert-FileHashEqual $uninstallVarMarker $uninstallVarHash "uninstall real etc/var marker"
     Assert-FileHashEqual $uninstallLegacyMarker $uninstallLegacyHash "uninstall legacy runtime configuration"
+    if (-not (Test-Path -LiteralPath (Join-Path $uninstallSharedVarPath "shared-uninstall-marker.txt"))) {
+        throw "Uninstall removed shared application data."
+    }
 
     $uninstallOperatorLink = New-LifecycleScenario "uninstall-operator-link" $false
-    $uninstallOperatorLinkPath = Join-Path $uninstallOperatorLink.EtcRoot "var"
+    $uninstallOperatorLinkPath = Join-Path $uninstallOperatorLink.SharedEtcRoot "var"
     $uninstallOperatorTarget = Join-Path $uninstallOperatorLink.Root "operator-var-target"
     $uninstallOperatorMarker = Join-Path $uninstallOperatorTarget "operator-link-marker.txt"
     $uninstallOperatorLog = Join-Path $uninstallOperatorLink.Root "lifecycle.log"
     $null = [System.IO.Directory]::CreateDirectory($uninstallOperatorTarget)
+    $null = [System.IO.Directory]::CreateDirectory($uninstallOperatorLink.SharedEtcRoot)
     Write-Utf8NoBom $uninstallOperatorMarker "operator-link-data-sentinel`n"
     $uninstallOperatorMarkerHash = (Get-FileHash -LiteralPath $uninstallOperatorMarker -Algorithm SHA256).Hash
     $operatorJunction = New-Item -ItemType Junction -Path $uninstallOperatorLinkPath -Target $uninstallOperatorTarget

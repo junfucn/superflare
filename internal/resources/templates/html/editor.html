@@ -1,4 +1,4 @@
-<!doctype html><html lang='{{ if eq .Locale "zh" }}zh-CN{{ else }}en{{ end }}'><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>SuperFlare &#22312;&#32447;&#25968;&#25454;&#32534;&#36753;</title><link rel="icon" href="{{ SiteIconURL .OptionSiteIcon }}"><link rel="shortcut icon" href="{{ SiteIconURL .OptionSiteIcon }}">{{ if eq .OptionSiteIcon "" }}
+<!doctype html><html lang='{{ if eq .Locale "zh" }}zh-CN{{ else }}en{{ end }}'><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>{{ if eq .Locale "en" }}SuperFlare Data Editor{{ else }}SuperFlare 在线数据编辑{{ end }}</title><link rel="icon" href="{{ SiteIconURL .OptionSiteIcon }}"><link rel="shortcut icon" href="{{ SiteIconURL .OptionSiteIcon }}">{{ if eq .OptionSiteIcon "" }}
 <link rel="apple-touch-icon" href="{{ AppleTouchIconURL }}"><link rel="icon" type="image/png" sizes="192x192" href="{{ AndroidChrome192URL }}"><link rel="icon" type="image/png" sizes="512x512" href="{{ AndroidChrome512URL }}">{{ end }}
 <link rel="stylesheet" href="/assets/table/grid.css{{.DebugAssetVersion}}"><script src="/assets/table/runtime.js{{.DebugAssetVersion}}"></script><script src="/assets/table/grid.js{{.DebugAssetVersion}}"></script><script src="/assets/table/grid.zh-CN.js{{.DebugAssetVersion}}"></script><script>
         (function () {
@@ -9,23 +9,28 @@
                 }
             } catch (error) { }
         })();
-    </script><style>html{background-color:#14181d}html[data-editor-theme=light]{background-color:#eef3f8}body{--editor-page-background:#14181d;--editor-page-text:rgba(239, 251, 255, 0.96);--editor-page-text-muted:rgba(239, 251, 255, 0.72);--editor-page-accent:#ffa500;--editor-panel-surface:rgba(15, 15, 15, 0.76);--editor-panel-border:rgba(255, 253, 234, 0.16);--editor-button-surface:rgba(18, 18, 18, 0.72);--editor-button-surface-hover:rgba(24, 24, 24, 0.88);--editor-input-surface:rgba(12, 12, 12, 0.92);--editor-input-border:rgba(255, 253, 234, 0.16);--editor-success-surface:rgba(56, 110, 56, 0.74);--editor-success-border:rgba(118, 202, 118, 0.44);--editor-warning-surface:rgba(124, 74, 24, 0.78);--editor-warning-border:rgba(227, 162, 90, 0.44);--editor-error-surface:rgba(122, 38, 38, 0.78);--editor-error-border:rgba(228, 108, 108, 0.44);--editor-neutral-surface:rgba(63, 86, 118, 0.72);--editor-neutral-border:rgba(137, 176, 224, 0.34);--color-background:var(--editor-page-background);--color-primary:var(--editor-page-text);--color-accent:var(--editor-page-accent);color-scheme:dark;min-height:100vh;background-color:var(--editor-page-background);color:var(--editor-page-text);--editor-table-surface:rgba(18, 18, 18, 0.97);--editor-table-surface-strong:rgba(28, 28, 28, 0.99);--editor-table-border:rgba(255, 253, 234, 0.14);--editor-table-border-soft:rgba(255, 253, 234, 0.08);--editor-table-border-medium:rgba(255, 253, 234, 0.1);--editor-table-border-strong:rgba(255, 253, 234, 0.28);--editor-table-text:rgba(239, 251, 255, 0.96);--editor-table-text-muted:rgba(239, 251, 255, 0.72);--editor-table-input-surface:rgba(239, 251, 255, 0.96);--editor-table-input-text:#171717;--editor-table-accent-soft:rgba(255, 194, 92, 0.72);--editor-table-accent-strong:rgba(255, 179, 54, 0.88);--editor-table-accent-text:#171717;--editor-table-accent-text-strong:#101010;--editor-table-invalid-bg:rgba(122, 38, 38, 0.62);--editor-table-invalid-text:#ffd9d9;--editor-table-unstable-bg:rgba(55, 78, 112, 0.58);--editor-table-unstable-text:#dcecff;--editor-table-restricted-bg:rgba(124, 74, 24, 0.52);--editor-table-restricted-text:#ffe4b8;--editor-search-active-outline:rgba(255, 247, 214, 0.42);--editor-menu-shadow:0 16px 34px rgba(0, 0, 0, 0.46), 0 0 0 1px rgba(255, 253, 234, 0.06);--editor-table-separator-surface:rgba(16, 16, 16, 0.98);--editor-table-separator-border-top:rgba(255, 253, 234, 0.08);--editor-table-separator-border-bottom:rgba(255, 253, 234, 0.04)}html[data-editor-theme=light] body{--editor-page-background:#eef3f8;--editor-page-text:rgba(21, 31, 43, 0.96);--editor-page-text-muted:rgba(21, 31, 43, 0.72);--editor-page-accent:#d98b00;--editor-panel-surface:rgba(255, 255, 255, 0.84);--editor-panel-border:rgba(36, 52, 71, 0.12);--editor-button-surface:rgba(255, 255, 255, 0.82);--editor-button-surface-hover:rgba(255, 255, 255, 0.96);--editor-input-surface:rgba(255, 255, 255, 0.98);--editor-input-border:rgba(36, 52, 71, 0.14);--editor-success-surface:rgba(94, 160, 101, 0.22);--editor-success-border:rgba(75, 132, 82, 0.34);--editor-warning-surface:rgba(215, 156, 68, 0.28);--editor-warning-border:rgba(188, 130, 38, 0.34);--editor-error-surface:rgba(220, 112, 112, 0.22);--editor-error-border:rgba(181, 74, 74, 0.32);--editor-neutral-surface:rgba(111, 153, 216, 0.2);--editor-neutral-border:rgba(82, 124, 188, 0.28);color-scheme:light;--editor-table-surface:rgba(250, 252, 255, 0.98);--editor-table-surface-strong:rgba(236, 242, 249, 0.99);--editor-table-border:rgba(36, 52, 71, 0.12);--editor-table-border-soft:rgba(36, 52, 71, 0.08);--editor-table-border-medium:rgba(36, 52, 71, 0.12);--editor-table-border-strong:rgba(36, 52, 71, 0.2);--editor-table-text:rgba(21, 31, 43, 0.96);--editor-table-text-muted:rgba(21, 31, 43, 0.62);--editor-table-input-surface:rgba(255, 255, 255, 0.99);--editor-table-input-text:#17202b;--editor-table-accent-soft:rgba(255, 208, 120, 0.74);--editor-table-accent-strong:rgba(255, 187, 72, 0.9);--editor-table-accent-text:#17202b;--editor-table-accent-text-strong:#0f1823;--editor-table-invalid-bg:rgba(255, 219, 219, 0.88);--editor-table-invalid-text:#8f2727;--editor-table-unstable-bg:rgba(220, 234, 255, 0.96);--editor-table-unstable-text:#2f5b93;--editor-table-restricted-bg:rgba(255, 237, 201, 0.96);--editor-table-restricted-text:#8a5710;--editor-search-active-outline:rgba(255, 245, 206, 0.92);--editor-menu-shadow:0 16px 34px rgba(16, 23, 33, 0.14), 0 0 0 1px rgba(36, 52, 71, 0.08);--editor-table-separator-surface:rgba(228, 234, 242, 0.98);--editor-table-separator-border-top:rgba(36, 52, 71, 0.1);--editor-table-separator-border-bottom:rgba(36, 52, 71, 0.06)}.editor-page{width:min(1440px,calc(100% - 48px));margin:0 auto;padding:20px 0 32px}.editor-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 18px;margin-bottom:14px}.editor-header-copy h1{font-size:26px;line-height:1.15;display:block}.editor-header-copy p{max-width:720px;margin-top:6px;line-height:1.65;font-size:13px;color:color-mix(in srgb,var(--color-primary) 84%,transparent)}.editor-header-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}#editor-theme-toggle{min-width:108px}.editor-button,.editor-button:visited,.editor-file-label{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 16px;border:1px solid color-mix(in srgb,var(--color-primary) 16%,transparent);border-radius:6px;background:var(--editor-button-surface);color:var(--color-primary);cursor:pointer;text-decoration:none;transition:border-color .18s ease,background-color .18s ease,opacity .18s ease}.editor-button:hover,.editor-file-label:hover{border-color:color-mix(in srgb,var(--color-accent) 60%,white 10%);background:var(--editor-button-surface-hover)}.editor-button[disabled]{opacity:.65;cursor:default}.editor-button-state-success{background:var(--editor-success-surface);border-color:var(--editor-success-border)}.editor-button-state-warning{background:var(--editor-warning-surface);border-color:var(--editor-warning-border)}.editor-button-state-error{background:var(--editor-error-surface);border-color:var(--editor-error-border)}.editor-button-state-neutral{background:var(--editor-neutral-surface);border-color:var(--editor-neutral-border)}.editor-toolbar{display:grid;grid-template-columns:minmax(0,1.6fr)minmax(0,1fr);gap:18px;margin-bottom:18px}.editor-panel{border:1px solid var(--editor-panel-border);border-radius:8px;background:var(--editor-panel-surface);padding:16px 18px}.editor-panel h2{font-size:18px;margin-bottom:6px}.editor-panel-full{grid-column:1/-1}.editor-panel-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px}.editor-panel-header h2{margin-bottom:0}.editor-panel p{line-height:1.64;font-size:13px;color:color-mix(in srgb,var(--color-primary) 82%,transparent)}.editor-backup-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.editor-file-label{min-width:148px}.editor-file-label span{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.editor-file-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}.editor-restore-form{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.editor-actions-grid{display:grid;gap:12px}.editor-compact-toolbar{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:10px 14px}.editor-search-box{display:flex;flex-wrap:nowrap;align-items:center;gap:10px 12px;min-width:0}.editor-search-box label{flex:none;font-weight:600;color:var(--color-primary);white-space:nowrap}.editor-search-box input{flex:1 1 320px;min-width:0;border:1px solid var(--editor-input-border);border-radius:6px;padding:10px 12px;background:var(--editor-input-surface);color:var(--color-primary);outline:none}.editor-search-box input::placeholder{color:color-mix(in srgb,var(--color-primary) 46%,transparent)}.editor-search-box input:focus{border-color:color-mix(in srgb,var(--color-accent) 76%,white 10%)}.editor-search-status{flex:none;min-width:88px;font-size:12px;color:color-mix(in srgb,var(--color-primary) 76%,transparent);white-space:nowrap}.editor-search-nav{display:inline-flex;flex:none;gap:8px;align-items:center}.editor-search-nav .editor-button{min-height:36px;padding:0 12px}#search-apply{min-width:72px;white-space:nowrap}.editor-shell{display:grid;gap:18px}.editor-render-warnings{display:grid;gap:10px;margin-bottom:18px}.editor-operation-notice{display:none;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px;padding:12px 14px;border:1px solid var(--editor-neutral-border);border-radius:8px;background:var(--editor-neutral-surface);color:var(--color-primary);line-height:1.55;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-primary) 8%,transparent)}.editor-operation-notice.is-visible{display:flex}.editor-operation-notice-success{border-color:var(--editor-success-border);background:var(--editor-success-surface)}.editor-operation-notice-error{border-color:var(--editor-error-border);background:var(--editor-error-surface)}.editor-operation-notice-warning{border-color:var(--editor-warning-border);background:var(--editor-warning-surface)}.editor-operation-notice-text{flex:auto;min-width:0}.editor-operation-notice-close{flex:none;min-width:34px;min-height:34px;padding:0 10px;font-size:20px;line-height:1}.editor-render-warning{padding:12px 14px;border:1px solid var(--editor-warning-border);border-radius:8px;background:var(--editor-warning-surface);color:var(--color-primary);line-height:1.55;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-primary) 8%,transparent)}.editor-table-panel{display:grid;gap:14px;min-width:0;max-width:100%}.editor-table-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 18px}.editor-table-header h2{margin-bottom:6px}.editor-table-header p{max-width:860px}.editor-table-shell{box-sizing:border-box;min-width:0;width:100%;max-width:100%;border:1px solid var(--editor-table-border);border-radius:8px;background:var(--editor-table-surface);overflow:hidden}.editor-inline-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.editor-bookmarks-toolbar{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:10px 14px}.editor-bookmarks-toolbar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end}.editor-form{display:none}.editor-help-list{display:grid;gap:8px;margin-top:12px}.editor-help-item{padding-left:14px;position:relative;color:color-mix(in srgb,var(--color-primary) 82%,transparent)}.editor-help-item::before{content:"";position:absolute;left:0;top:10px;width:5px;height:5px;border-radius:999px;background:color-mix(in srgb,var(--color-accent) 78%,var(--color-primary) 22%)}.link-check-note{color:var(--editor-table-invalid-text);font-weight:600}#container-bookmarks .handsontable td.link-check-invalid,#container-bookmarks .handsontable .htCore td.link-check-invalid{background:var(--editor-table-invalid-bg)!important;color:var(--editor-table-invalid-text)!important}#container-bookmarks .handsontable td.link-check-unstable,#container-bookmarks .handsontable .htCore td.link-check-unstable{background:var(--editor-table-unstable-bg)!important;color:var(--editor-table-unstable-text)!important}#container-bookmarks .handsontable td.link-check-restricted,#container-bookmarks .handsontable .htCore td.link-check-restricted{background:var(--editor-table-restricted-bg)!important;color:var(--editor-table-restricted-text)!important}#container-category .handsontable td.editor-validation-error,#container-category .handsontable .htCore td.editor-validation-error,#container-bookmarks .handsontable td.editor-validation-error,#container-bookmarks .handsontable .htCore td.editor-validation-error{background:var(--editor-table-invalid-bg)!important;color:var(--editor-table-invalid-text)!important;font-weight:700!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--editor-table-invalid-text) 70%,transparent)}#container-bookmarks .handsontable td.editor-search-match,#container-bookmarks .handsontable .htCore td.editor-search-match{background:var(--editor-table-accent-soft)!important;color:var(--editor-table-accent-text)!important;font-weight:600!important;text-shadow:none!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--editor-table-accent-strong) 72%,var(--editor-table-surface))}#container-bookmarks .handsontable td.editor-search-match-active,#container-bookmarks .handsontable .htCore td.editor-search-match-active{background:var(--editor-table-accent-strong)!important;color:var(--editor-table-accent-text-strong)!important;font-weight:700!important;text-shadow:none!important;box-shadow:inset 0 0 0 1px var(--editor-search-active-outline),inset 0 0 0 2px color-mix(in srgb,var(--editor-table-accent-strong) 92%,var(--editor-table-surface-strong))}#container-category,#container-bookmarks{min-height:0;min-width:0;width:100%;max-width:100%}#container-category .handsontable,#container-bookmarks .handsontable,#container-category .handsontable table,#container-bookmarks .handsontable table,#container-category .handsontable .htCore,#container-bookmarks .handsontable .htCore,#container-category .handsontable .wtHolder,#container-bookmarks .handsontable .wtHolder,#container-category .handsontable .wtHider,#container-bookmarks .handsontable .wtHider,#container-category .handsontable .wtSpreader,#container-bookmarks .handsontable .wtSpreader,#container-category .handsontable .ht_master,#container-bookmarks .handsontable .ht_master,#container-category .handsontable .ht_clone_top,#container-bookmarks .handsontable .ht_clone_top,#container-category .handsontable .ht_clone_left,#container-bookmarks .handsontable .ht_clone_left,#container-category .handsontable .ht_clone_top_left_corner,#container-bookmarks .handsontable .ht_clone_top_left_corner{background:var(--editor-table-surface)!important;color:var(--editor-table-text)!important}#container-category .handsontable th,#container-category .handsontable td,#container-bookmarks .handsontable th,#container-bookmarks .handsontable td,#container-category .handsontable .htCore th,#container-category .handsontable .htCore td,#container-bookmarks .handsontable .htCore th,#container-bookmarks .handsontable .htCore td{border-color:var(--editor-table-border)!important;color:var(--editor-table-text)!important}#container-category .handsontable thead th,#container-bookmarks .handsontable thead th,#container-category .handsontable .ht_clone_top th,#container-bookmarks .handsontable .ht_clone_top th,#container-category .handsontable .ht_clone_left th,#container-bookmarks .handsontable .ht_clone_left th,#container-category .handsontable .ht_clone_top_left_corner th,#container-bookmarks .handsontable .ht_clone_top_left_corner th,#container-category .handsontable th.ht__row_header,#container-bookmarks .handsontable th.ht__row_header,#container-category .handsontable th.ht__column_header,#container-bookmarks .handsontable th.ht__column_header{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important;font-weight:600}#container-category .handsontable tbody th,#container-category .handsontable tbody th:first-child,#container-category .handsontable .ht_clone_left th,#container-category .handsontable .ht_clone_top_left_corner th,#container-bookmarks .handsontable tbody th,#container-bookmarks .handsontable tbody th:first-child,#container-bookmarks .handsontable .ht_clone_left th,#container-bookmarks .handsontable .ht_clone_top_left_corner th{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important}#container-category .handsontable td,#container-bookmarks .handsontable td{background:var(--editor-table-surface)!important;white-space:pre-wrap!important;overflow-wrap:anywhere;word-break:normal;text-align:left!important;vertical-align:middle!important}#container-category .handsontable th,#container-bookmarks .handsontable th{vertical-align:middle!important}#container-category .handsontable input,#container-category .handsontable textarea,#container-category .handsontable select,#container-category .handsontable button,#container-bookmarks .handsontable input,#container-bookmarks .handsontable textarea,#container-bookmarks .handsontable select,#container-bookmarks .handsontable button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}#container-category .handsontable textarea,#container-bookmarks .handsontable textarea{white-space:pre-wrap!important;overflow-wrap:anywhere;word-break:normal}#container-category .handsontableInput,#container-bookmarks .handsontableInput,#container-category .htSelectEditor,#container-bookmarks .htSelectEditor,#container-category .htNumericInput,#container-bookmarks .htNumericInput{box-sizing:border-box!important;min-width:0!important;max-width:320px!important;background:var(--editor-table-input-surface)!important;color:var(--editor-table-input-text)!important;border-color:var(--editor-table-border-strong)!important}#container-category .handsontableInput,#container-bookmarks .handsontableInput{white-space:pre-wrap!important;overflow-wrap:anywhere;word-break:normal}.handsontable.listbox,.handsontable.listbox table,.handsontable.listbox .htCore,.handsontable.listbox .wtHolder,.handsontable.listbox .wtHider,.handsontable.listbox .wtSpreader,.handsontable.listbox .ht_master,.handsontable.listbox .ht_clone_top,.handsontable.listbox .ht_clone_left,.handsontable.listbox .ht_clone_top_left_corner{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important}.handsontable.listbox td,.handsontable.listbox .htCore td,.handsontable.listbox tbody td{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important;border-color:var(--editor-table-border-soft)!important}.handsontable.listbox td.current,.handsontable.listbox tbody td.current{background:var(--editor-table-accent-soft)!important;color:var(--editor-table-accent-text)!important}.handsontable.listbox .htAutocompleteArrow{color:var(--editor-table-text-muted)!important}.htMenu.htContextMenu,.htMenu.htContextMenu table,.htMenu.htContextMenu .htCore,.htMenu.htContextMenu .wtHolder,.htMenu.htContextMenu .wtHider,.htMenu.htContextMenu .wtSpreader,.htMenu.htContextMenu .ht_master,.htContextMenu.handsontable,.htContextMenu.handsontable table,.htContextMenu.handsontable .htCore,.htContextMenu.handsontable .wtHolder,.htContextMenu.handsontable .wtHider,.htContextMenu.handsontable .wtSpreader,.htContextMenu.handsontable .ht_master{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important}.htMenu.htContextMenu,.htContextMenu.handsontable{border:1px solid var(--editor-table-border)!important;border-radius:8px!important;box-shadow:var(--editor-menu-shadow)!important;overflow:hidden!important}.htMenu.htContextMenu tbody tr,.htContextMenu.handsontable tbody tr{background:var(--editor-table-surface-strong)!important}.htMenu.htContextMenu td,.htMenu.htContextMenu .htCore td,.htMenu.htContextMenu tbody td,.htContextMenu.handsontable td,.htContextMenu.handsontable .htCore td,.htContextMenu.handsontable tbody td{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important;border-color:var(--editor-table-border-medium)!important;font-weight:500!important}.htMenu.htContextMenu .htItemWrapper,.htMenu.htContextMenu .htDisabled .htItemWrapper,.htMenu.htContextMenu .htSubmenu .htItemWrapper,.htMenu.htContextMenu .htSeparator .htItemWrapper{color:inherit!important;background:0 0!important}.htMenu.htContextMenu td.current,.htMenu.htContextMenu tbody td.current,.htMenu.htContextMenu td.zeroclipboard-is-hover,.htMenu.htContextMenu tbody td.zeroclipboard-is-hover,.htContextMenu.handsontable td.current,.htContextMenu.handsontable tbody td.current,.htContextMenu.handsontable td.zeroclipboard-is-hover,.htContextMenu.handsontable tbody td.zeroclipboard-is-hover{background:var(--editor-table-accent-soft)!important;color:var(--editor-table-accent-text)!important}.htMenu.htContextMenu td.htDisabled,.htMenu.htContextMenu tbody td.htDisabled,.htMenu.htContextMenu td.htSeparator,.htMenu.htContextMenu tbody td.htSeparator,.htContextMenu.handsontable td.htDisabled,.htContextMenu.handsontable tbody td.htDisabled,.htContextMenu.handsontable td.htSeparator,.htContextMenu.handsontable tbody td.htSeparator{color:var(--editor-table-text-muted)!important}.htMenu.htContextMenu td.htSeparator,.htMenu.htContextMenu tbody td.htSeparator,.htContextMenu.handsontable td.htSeparator,.htContextMenu.handsontable tbody td.htSeparator{background:var(--editor-table-separator-surface)!important;border-top:1px solid var(--editor-table-separator-border-top)!important;border-bottom:1px solid var(--editor-table-separator-border-bottom)!important}.htMenu.htContextMenu .htSubmenu:after,.htContextMenu.handsontable .htSubmenu:after{border-left-color:color-mix(in srgb,var(--editor-table-text) 70%,transparent)!important}@media(max-width:1080px){.editor-toolbar{grid-template-columns:1fr}}@media(max-width:768px){.editor-page{width:min(100%,calc(100% - 24px));padding-top:16px;padding-bottom:24px}.editor-header-copy h1{font-size:24px}.editor-header-actions,.editor-inline-actions,.editor-bookmarks-toolbar-actions{width:100%;justify-content:flex-start}.editor-button,.editor-file-label{width:100%}.editor-operation-notice{align-items:flex-start;gap:10px}.editor-operation-notice-text{flex:auto;min-width:0;overflow-wrap:anywhere;word-break:normal}.editor-operation-notice .editor-operation-notice-close{flex:0 0 34px;width:34px;min-width:34px;min-height:34px;padding:0}.editor-restore-form{width:100%}.editor-search-box input{width:100%}.editor-search-box{flex-wrap:wrap;align-items:stretch}}</style></head><body><div class="editor-page"><header class="editor-header"><div class="editor-header-copy"><h1>SuperFlare &#22312;&#32447;&#25968;&#25454;&#32534;&#36753;</h1><p>&#22312;&#19968;&#20010;&#39029;&#38754;&#20869;&#23436;&#25104;&#20998;&#31867;&#12289;&#20070;&#31614;&#12289;&#20869;&#32593;&#31471;&#21475;&#24555;&#36895;&#38142;&#25509;&#21644;&#25968;&#25454;&#22791;&#20221;&#24674;&#22797;&#12290;&#20445;&#23384;&#21518;&#20250;&#30452;&#25509;&#20889;&#22238;&#37197;&#32622;&#25991;&#20214;&#12290;</div><div class="editor-header-actions"><button type="button" class="editor-button" id="editor-theme-toggle" data-label-dark="{{ if eq .Locale "en" }}Dark Mode{{ else }}深色模式{{ end }}" data-label-light="{{ if eq .Locale "en" }}Light Mode{{ else }}浅色模式{{ end }}">{{ if eq .Locale "en" }}Light Mode{{ else }}浅色模式{{ end }}</button>
-<button type="button" class="editor-button" id="back-home">&#36820;&#22238;&#39318;&#39029;</button></div></header><div id="editor-operation-notice" class="editor-operation-notice{{ if .OperationNotice }} is-visible editor-operation-notice-{{ index .OperationNotice "Type" }}{{ end }}"{{ if not .OperationNotice }} hidden{{ end }}><div class="editor-operation-notice-text" id="editor-operation-notice-text">{{ if .OperationNotice }}{{ index .OperationNotice "Text" }}{{ end }}</div><button type="button" class="editor-button editor-operation-notice-close" id="editor-operation-notice-close" aria-label="{{ if eq .Locale "en" }}Close{{ else }}&#20851;&#38381;{{ end }}">&#215;</button></div>{{ if .RenderWarnings }}<div class="editor-render-warnings">{{ range .RenderWarnings }}<div class="editor-render-warning">{{ . }}</div>{{ end }}</div>{{ end }}<section class="editor-toolbar"><div class="editor-panel editor-panel-full"><div class="editor-panel-header"><h2>&#25968;&#25454;&#22791;&#20221;&#19982;&#24674;&#22797;</h2><div class="editor-backup-row"><button type="button" class="editor-button" id="editor-backup-download">&#19979;&#36733;&#22791;&#20221;</button><form action="/editor/restore" method="POST" enctype="multipart/form-data" class="editor-restore-form"><label class="editor-file-label" for="editor-backup-file"><span id="editor-backup-file-name">&#36873;&#25321;&#22791;&#20221;&#25991;&#20214;</span>
-</label><input class="editor-file-input" type="file" name="backup" id="editor-backup-file" accept=".zip,.yml,.yaml">
-<button class="editor-button" id="editor-restore-submit">&#24674;&#22797;&#23548;&#20837;</button></form></div></div></div></section><main class="editor-shell"><section class="editor-panel editor-table-panel"><div class="editor-table-header"><div><h2>&#20998;&#31867;&#31649;&#29702;</h2><p>&#20998;&#31867;&#21517;&#31216;&#26356;&#26032;&#21518;&#20250;&#21516;&#27493;&#21047;&#26032;&#19979;&#26041;&#20070;&#31614;&#34920;&#20013;&#30340;&#23545;&#24212;&#20998;&#31867;&#25991;&#26412;&#12290;</div><div class="editor-inline-actions"><button type="button" class="editor-button update-data">&#20445;&#23384;&#20998;&#31867;&#25968;&#25454;</button></div></div><div class="editor-table-shell"><div id="container-category"></div></div></section><section class="editor-panel editor-table-panel"><div class="editor-table-header"><div><h2>&#24212;&#29992;&#19982;&#20070;&#31614;&#32534;&#36753;</h2><p>&#21487;&#30452;&#25509;&#32534;&#36753;&#21517;&#31216;&#12289;URL&#12289;&#20869;&#32593;&#22320;&#22336;&#12289;&#31867;&#22411;&#12289;&#23376;&#30446;&#24405;&#12289;&#22270;&#26631;&#21644;&#25551;&#36848;&#12290;&#20844;&#32593;&#26816;&#27979;&#32467;&#26524;&#20250;&#25353;&#26080;&#25928;&#12289;&#21463;&#38480;&#12289;&#19981;&#31283;&#23450;&#19977;&#31867;&#22312;&#26368;&#21518;&#19968;&#21015;&#25552;&#31034;&#12290;</div></div><div class="editor-bookmarks-toolbar"><div class="editor-search-box"><label for="search">&#39640;&#20142;&#31579;&#36873;</label>
-<input id="search" placeholder="&#36755;&#20837;&#20070;&#31614;&#21517;&#31216;&#12289;&#38142;&#25509;&#12289;&#25551;&#36848;&#25110;&#20998;&#31867;">
-<button type="button" class="editor-button" id="search-apply">&#25628;&#32034;</button>
-<span class="editor-search-status" id="search-result-count">&#26080;&#25628;&#32034;</span><div class="editor-search-nav"><button type="button" class="editor-button" id="search-prev">&#19978;&#19968;&#39033;</button>
-<button type="button" class="editor-button" id="search-next">&#19979;&#19968;&#39033;</button></div></div><div class="editor-bookmarks-toolbar-actions"><a class="editor-button" href="/icons" target="_blank" rel="noopener noreferrer">&#25171;&#24320;&#22270;&#26631;&#39029;</a>
-<button type="button" class="editor-button" id="check-links">&#26816;&#26597;&#20844;&#32593;&#38142;&#25509;&#29366;&#24577;</button>
-<button type="button" class="editor-button update-data">&#20445;&#23384;&#20070;&#31614;&#25968;&#25454;</button></div></div><div class="editor-table-shell"><div id="container-bookmarks"></div></div></section></main><form action="/editor" method="POST" id="form-categories" class="editor-form"><input type="hidden" name="categories" id="field-categories">
-<input type="hidden" name="bookmarks" id="field-bookmarks"></form></div><script type="text/html" id="data-categories">{{.DataCategories}}</script>
+    </script><style>html{background-color:#14181d}html[data-editor-theme=light]{background-color:#eef3f8}body{font-family:Roboto,sans-serif;font-size:14px;--editor-page-background:#14181d;--editor-page-text:rgba(239, 251, 255, 0.96);--editor-page-text-muted:rgba(239, 251, 255, 0.72);--editor-page-accent:#ffa500;--editor-panel-surface:rgba(15, 15, 15, 0.76);--editor-panel-border:rgba(255, 253, 234, 0.16);--editor-button-surface:rgba(18, 18, 18, 0.72);--editor-button-surface-hover:rgba(24, 24, 24, 0.88);--editor-input-surface:rgba(12, 12, 12, 0.92);--editor-input-border:rgba(255, 253, 234, 0.16);--editor-success-surface:rgba(56, 110, 56, 0.74);--editor-success-border:rgba(118, 202, 118, 0.44);--editor-warning-surface:rgba(124, 74, 24, 0.78);--editor-warning-border:rgba(227, 162, 90, 0.44);--editor-error-surface:rgba(122, 38, 38, 0.78);--editor-error-border:rgba(228, 108, 108, 0.44);--editor-neutral-surface:rgba(63, 86, 118, 0.72);--editor-neutral-border:rgba(137, 176, 224, 0.34);--color-background:var(--editor-page-background);--color-primary:var(--editor-page-text);--color-accent:var(--editor-page-accent);color-scheme:dark;min-height:100vh;background-color:var(--editor-page-background);color:var(--editor-page-text);--editor-table-surface:rgba(18, 18, 18, 0.97);--editor-table-surface-strong:rgba(28, 28, 28, 0.99);--editor-table-border:rgba(255, 253, 234, 0.14);--editor-table-border-soft:rgba(255, 253, 234, 0.08);--editor-table-border-medium:rgba(255, 253, 234, 0.1);--editor-table-border-strong:rgba(255, 253, 234, 0.28);--editor-table-text:rgba(239, 251, 255, 0.96);--editor-table-text-muted:rgba(239, 251, 255, 0.72);--editor-table-input-surface:rgba(239, 251, 255, 0.96);--editor-table-input-text:#171717;--editor-table-accent-soft:rgba(255, 194, 92, 0.72);--editor-table-accent-strong:rgba(255, 179, 54, 0.88);--editor-table-accent-text:#171717;--editor-table-accent-text-strong:#101010;--editor-table-invalid-bg:rgba(122, 38, 38, 0.62);--editor-table-invalid-text:#ffd9d9;--editor-table-unstable-bg:rgba(55, 78, 112, 0.58);--editor-table-unstable-text:#dcecff;--editor-table-restricted-bg:rgba(124, 74, 24, 0.52);--editor-table-restricted-text:#ffe4b8;--editor-search-active-outline:rgba(255, 247, 214, 0.42);--editor-menu-shadow:0 16px 34px rgba(0, 0, 0, 0.46), 0 0 0 1px rgba(255, 253, 234, 0.06);--editor-table-separator-surface:rgba(16, 16, 16, 0.98);--editor-table-separator-border-top:rgba(255, 253, 234, 0.08);--editor-table-separator-border-bottom:rgba(255, 253, 234, 0.04)}html[data-editor-theme=light] body{--editor-page-background:#eef3f8;--editor-page-text:rgba(21, 31, 43, 0.96);--editor-page-text-muted:rgba(21, 31, 43, 0.72);--editor-page-accent:#d98b00;--editor-panel-surface:rgba(255, 255, 255, 0.84);--editor-panel-border:rgba(36, 52, 71, 0.12);--editor-button-surface:rgba(255, 255, 255, 0.82);--editor-button-surface-hover:rgba(255, 255, 255, 0.96);--editor-input-surface:rgba(255, 255, 255, 0.98);--editor-input-border:rgba(36, 52, 71, 0.14);--editor-success-surface:rgba(94, 160, 101, 0.22);--editor-success-border:rgba(75, 132, 82, 0.34);--editor-warning-surface:rgba(215, 156, 68, 0.28);--editor-warning-border:rgba(188, 130, 38, 0.34);--editor-error-surface:rgba(220, 112, 112, 0.22);--editor-error-border:rgba(181, 74, 74, 0.32);--editor-neutral-surface:rgba(111, 153, 216, 0.2);--editor-neutral-border:rgba(82, 124, 188, 0.28);color-scheme:light;--editor-table-surface:rgba(250, 252, 255, 0.98);--editor-table-surface-strong:rgba(236, 242, 249, 0.99);--editor-table-border:rgba(36, 52, 71, 0.12);--editor-table-border-soft:rgba(36, 52, 71, 0.08);--editor-table-border-medium:rgba(36, 52, 71, 0.12);--editor-table-border-strong:rgba(36, 52, 71, 0.2);--editor-table-text:rgba(21, 31, 43, 0.96);--editor-table-text-muted:rgba(21, 31, 43, 0.62);--editor-table-input-surface:rgba(255, 255, 255, 0.99);--editor-table-input-text:#17202b;--editor-table-accent-soft:rgba(255, 208, 120, 0.74);--editor-table-accent-strong:rgba(255, 187, 72, 0.9);--editor-table-accent-text:#17202b;--editor-table-accent-text-strong:#0f1823;--editor-table-invalid-bg:rgba(255, 219, 219, 0.88);--editor-table-invalid-text:#8f2727;--editor-table-unstable-bg:rgba(220, 234, 255, 0.96);--editor-table-unstable-text:#2f5b93;--editor-table-restricted-bg:rgba(255, 237, 201, 0.96);--editor-table-restricted-text:#8a5710;--editor-search-active-outline:rgba(255, 245, 206, 0.92);--editor-menu-shadow:0 16px 34px rgba(16, 23, 33, 0.14), 0 0 0 1px rgba(36, 52, 71, 0.08);--editor-table-separator-surface:rgba(228, 234, 242, 0.98);--editor-table-separator-border-top:rgba(36, 52, 71, 0.1);--editor-table-separator-border-bottom:rgba(36, 52, 71, 0.06)}.editor-page{width:min(1440px,calc(100% - 48px));margin:0 auto;padding:20px 0 32px}.editor-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 18px;margin-bottom:14px}.editor-header-copy h1{font-size:26px;line-height:1.15;display:block}.editor-header-copy p{max-width:720px;margin-top:6px;line-height:1.65;font-size:13px;color:color-mix(in srgb,var(--color-primary) 84%,transparent)}.editor-header-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}#editor-theme-toggle{min-width:108px}.editor-button,.editor-button:visited,.editor-file-label{font:inherit;display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 16px;border:1px solid color-mix(in srgb,var(--color-primary) 16%,transparent);border-radius:6px;background:var(--editor-button-surface);color:var(--color-primary);cursor:pointer;text-decoration:none;transition:border-color .18s ease,background-color .18s ease,opacity .18s ease}.editor-button:hover,.editor-file-label:hover{border-color:color-mix(in srgb,var(--color-accent) 60%,white 10%);background:var(--editor-button-surface-hover)}.editor-button:focus-visible,.editor-file-input:focus-visible+.editor-file-label{outline:2px solid var(--color-accent);outline-offset:2px}.editor-button[disabled]{opacity:.65;cursor:default}.editor-button-state-success{background:var(--editor-success-surface);border-color:var(--editor-success-border)}.editor-button-state-warning{background:var(--editor-warning-surface);border-color:var(--editor-warning-border)}.editor-button-state-error{background:var(--editor-error-surface);border-color:var(--editor-error-border)}.editor-button-state-neutral{background:var(--editor-neutral-surface);border-color:var(--editor-neutral-border)}.editor-toolbar{display:grid;grid-template-columns:minmax(0,1.6fr)minmax(0,1fr);gap:18px;margin-bottom:18px}.editor-panel{border:1px solid var(--editor-panel-border);border-radius:8px;background:var(--editor-panel-surface);padding:16px 18px}.editor-panel h2{font-size:18px;margin-bottom:6px}.editor-panel-full{grid-column:1/-1}.editor-panel-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px}.editor-panel-header h2{margin-bottom:0}.editor-panel p{line-height:1.64;font-size:13px;color:color-mix(in srgb,var(--color-primary) 82%,transparent)}.editor-backup-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.editor-file-label{min-width:148px}.editor-file-label span{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.editor-file-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}.editor-restore-form{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.editor-actions-grid{display:grid;gap:12px}.editor-compact-toolbar{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:10px 14px}.editor-search-box{display:flex;flex-wrap:nowrap;align-items:center;gap:10px 12px;min-width:0}.editor-search-box label{flex:none;font-weight:600;color:var(--color-primary);white-space:nowrap}.editor-search-box input{flex:1 1 320px;min-width:0;border:1px solid var(--editor-input-border);border-radius:6px;padding:10px 12px;background:var(--editor-input-surface);color:var(--color-primary);outline:none}.editor-search-box input::placeholder{color:color-mix(in srgb,var(--color-primary) 46%,transparent)}.editor-search-box input:focus{border-color:color-mix(in srgb,var(--color-accent) 76%,white 10%)}.editor-search-status{flex:none;min-width:88px;font-size:12px;color:color-mix(in srgb,var(--color-primary) 76%,transparent);white-space:nowrap}.editor-search-nav{display:inline-flex;flex:none;gap:8px;align-items:center}.editor-search-nav .editor-button{min-height:36px;padding:0 12px}#search-apply{min-width:72px;white-space:nowrap}.editor-shell{display:grid;gap:18px}.editor-render-warnings{display:grid;gap:10px;margin-bottom:18px}.editor-operation-notice{display:none;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px;padding:12px 14px;border:1px solid var(--editor-neutral-border);border-radius:8px;background:var(--editor-neutral-surface);color:var(--color-primary);line-height:1.55;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-primary) 8%,transparent)}.editor-operation-notice.is-visible{display:flex}.editor-operation-notice-success{border-color:var(--editor-success-border);background:var(--editor-success-surface)}.editor-operation-notice-error{border-color:var(--editor-error-border);background:var(--editor-error-surface)}.editor-operation-notice-warning{border-color:var(--editor-warning-border);background:var(--editor-warning-surface)}.editor-operation-notice-text{flex:auto;min-width:0}.editor-operation-notice-close{flex:none;min-width:34px;min-height:34px;padding:0 10px;font-size:20px;line-height:1}.editor-render-warning{padding:12px 14px;border:1px solid var(--editor-warning-border);border-radius:8px;background:var(--editor-warning-surface);color:var(--color-primary);line-height:1.55;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-primary) 8%,transparent)}.editor-table-panel{display:grid;gap:14px;min-width:0;max-width:100%}.editor-table-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 18px}.editor-table-header h2{margin-bottom:6px}.editor-table-header p{max-width:860px}.editor-table-shell{box-sizing:border-box;min-width:0;width:100%;max-width:100%;border:1px solid var(--editor-table-border);border-radius:8px;background:var(--editor-table-surface);overflow:hidden}.editor-inline-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.editor-bookmarks-toolbar{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:10px 14px}.editor-bookmarks-toolbar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end}.editor-form{display:none}.editor-help-list{display:grid;gap:8px;margin-top:12px}.editor-help-item{padding-left:14px;position:relative;color:color-mix(in srgb,var(--color-primary) 82%,transparent)}.editor-help-item::before{content:"";position:absolute;left:0;top:10px;width:5px;height:5px;border-radius:999px;background:color-mix(in srgb,var(--color-accent) 78%,var(--color-primary) 22%)}.link-check-note{color:var(--editor-table-invalid-text);font-weight:600}#container-bookmarks .handsontable td.link-check-invalid,#container-bookmarks .handsontable .htCore td.link-check-invalid{background:var(--editor-table-invalid-bg)!important;color:var(--editor-table-invalid-text)!important}#container-bookmarks .handsontable td.link-check-unstable,#container-bookmarks .handsontable .htCore td.link-check-unstable{background:var(--editor-table-unstable-bg)!important;color:var(--editor-table-unstable-text)!important}#container-bookmarks .handsontable td.link-check-restricted,#container-bookmarks .handsontable .htCore td.link-check-restricted{background:var(--editor-table-restricted-bg)!important;color:var(--editor-table-restricted-text)!important}#container-category .handsontable td.editor-validation-error,#container-category .handsontable .htCore td.editor-validation-error,#container-bookmarks .handsontable td.editor-validation-error,#container-bookmarks .handsontable .htCore td.editor-validation-error{background:var(--editor-table-invalid-bg)!important;color:var(--editor-table-invalid-text)!important;font-weight:700!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--editor-table-invalid-text) 70%,transparent)}#container-bookmarks .handsontable td.editor-search-match,#container-bookmarks .handsontable .htCore td.editor-search-match{background:var(--editor-table-accent-soft)!important;color:var(--editor-table-accent-text)!important;font-weight:600!important;text-shadow:none!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--editor-table-accent-strong) 72%,var(--editor-table-surface))}#container-bookmarks .handsontable td.editor-search-match-active,#container-bookmarks .handsontable .htCore td.editor-search-match-active{background:var(--editor-table-accent-strong)!important;color:var(--editor-table-accent-text-strong)!important;font-weight:700!important;text-shadow:none!important;box-shadow:inset 0 0 0 1px var(--editor-search-active-outline),inset 0 0 0 2px color-mix(in srgb,var(--editor-table-accent-strong) 92%,var(--editor-table-surface-strong))}#container-category,#container-bookmarks{min-height:0;min-width:0;width:100%;max-width:100%}#container-category .handsontable,#container-bookmarks .handsontable,#container-category .handsontable table,#container-bookmarks .handsontable table,#container-category .handsontable .htCore,#container-bookmarks .handsontable .htCore,#container-category .handsontable .wtHolder,#container-bookmarks .handsontable .wtHolder,#container-category .handsontable .wtHider,#container-bookmarks .handsontable .wtHider,#container-category .handsontable .wtSpreader,#container-bookmarks .handsontable .wtSpreader,#container-category .handsontable .ht_master,#container-bookmarks .handsontable .ht_master,#container-category .handsontable .ht_clone_top,#container-bookmarks .handsontable .ht_clone_top,#container-category .handsontable .ht_clone_left,#container-bookmarks .handsontable .ht_clone_left,#container-category .handsontable .ht_clone_top_left_corner,#container-bookmarks .handsontable .ht_clone_top_left_corner{background:var(--editor-table-surface)!important;color:var(--editor-table-text)!important}#container-category .handsontable th,#container-category .handsontable td,#container-bookmarks .handsontable th,#container-bookmarks .handsontable td,#container-category .handsontable .htCore th,#container-category .handsontable .htCore td,#container-bookmarks .handsontable .htCore th,#container-bookmarks .handsontable .htCore td{border-color:var(--editor-table-border)!important;color:var(--editor-table-text)!important}#container-category .handsontable thead th,#container-bookmarks .handsontable thead th,#container-category .handsontable .ht_clone_top th,#container-bookmarks .handsontable .ht_clone_top th,#container-category .handsontable .ht_clone_left th,#container-bookmarks .handsontable .ht_clone_left th,#container-category .handsontable .ht_clone_top_left_corner th,#container-bookmarks .handsontable .ht_clone_top_left_corner th,#container-category .handsontable th.ht__row_header,#container-bookmarks .handsontable th.ht__row_header,#container-category .handsontable th.ht__column_header,#container-bookmarks .handsontable th.ht__column_header{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important;font-weight:600}#container-category .handsontable tbody th,#container-category .handsontable tbody th:first-child,#container-category .handsontable .ht_clone_left th,#container-category .handsontable .ht_clone_top_left_corner th,#container-bookmarks .handsontable tbody th,#container-bookmarks .handsontable tbody th:first-child,#container-bookmarks .handsontable .ht_clone_left th,#container-bookmarks .handsontable .ht_clone_top_left_corner th{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important}#container-category .handsontable td,#container-bookmarks .handsontable td{background:var(--editor-table-surface)!important;white-space:pre-wrap!important;overflow-wrap:anywhere;word-break:normal;text-align:left!important;vertical-align:middle!important}#container-category .handsontable th,#container-bookmarks .handsontable th{vertical-align:middle!important}#container-category .handsontable input,#container-category .handsontable textarea,#container-category .handsontable select,#container-category .handsontable button,#container-bookmarks .handsontable input,#container-bookmarks .handsontable textarea,#container-bookmarks .handsontable select,#container-bookmarks .handsontable button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}#container-category .handsontable textarea,#container-bookmarks .handsontable textarea{white-space:pre-wrap!important;overflow-wrap:anywhere;word-break:normal}#container-category .handsontableInput,#container-bookmarks .handsontableInput,#container-category .htSelectEditor,#container-bookmarks .htSelectEditor,#container-category .htNumericInput,#container-bookmarks .htNumericInput{box-sizing:border-box!important;min-width:0!important;max-width:320px!important;background:var(--editor-table-input-surface)!important;color:var(--editor-table-input-text)!important;border-color:var(--editor-table-border-strong)!important}#container-category .handsontableInput,#container-bookmarks .handsontableInput{white-space:pre-wrap!important;overflow-wrap:anywhere;word-break:normal}.handsontable.listbox,.handsontable.listbox table,.handsontable.listbox .htCore,.handsontable.listbox .wtHolder,.handsontable.listbox .wtHider,.handsontable.listbox .wtSpreader,.handsontable.listbox .ht_master,.handsontable.listbox .ht_clone_top,.handsontable.listbox .ht_clone_left,.handsontable.listbox .ht_clone_top_left_corner{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important}.handsontable.listbox td,.handsontable.listbox .htCore td,.handsontable.listbox tbody td{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important;border-color:var(--editor-table-border-soft)!important}.handsontable.listbox td.current,.handsontable.listbox tbody td.current{background:var(--editor-table-accent-soft)!important;color:var(--editor-table-accent-text)!important}.handsontable.listbox .htAutocompleteArrow{color:var(--editor-table-text-muted)!important}.htMenu.htContextMenu,.htMenu.htContextMenu table,.htMenu.htContextMenu .htCore,.htMenu.htContextMenu .wtHolder,.htMenu.htContextMenu .wtHider,.htMenu.htContextMenu .wtSpreader,.htMenu.htContextMenu .ht_master,.htContextMenu.handsontable,.htContextMenu.handsontable table,.htContextMenu.handsontable .htCore,.htContextMenu.handsontable .wtHolder,.htContextMenu.handsontable .wtHider,.htContextMenu.handsontable .wtSpreader,.htContextMenu.handsontable .ht_master{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important}.htMenu.htContextMenu,.htContextMenu.handsontable{border:1px solid var(--editor-table-border)!important;border-radius:8px!important;box-shadow:var(--editor-menu-shadow)!important;overflow:hidden!important}.htMenu.htContextMenu tbody tr,.htContextMenu.handsontable tbody tr{background:var(--editor-table-surface-strong)!important}.htMenu.htContextMenu td,.htMenu.htContextMenu .htCore td,.htMenu.htContextMenu tbody td,.htContextMenu.handsontable td,.htContextMenu.handsontable .htCore td,.htContextMenu.handsontable tbody td{background:var(--editor-table-surface-strong)!important;color:var(--editor-table-text)!important;border-color:var(--editor-table-border-medium)!important;font-weight:500!important}.htMenu.htContextMenu .htItemWrapper,.htMenu.htContextMenu .htDisabled .htItemWrapper,.htMenu.htContextMenu .htSubmenu .htItemWrapper,.htMenu.htContextMenu .htSeparator .htItemWrapper{color:inherit!important;background:0 0!important}.htMenu.htContextMenu td.current,.htMenu.htContextMenu tbody td.current,.htMenu.htContextMenu td.zeroclipboard-is-hover,.htMenu.htContextMenu tbody td.zeroclipboard-is-hover,.htContextMenu.handsontable td.current,.htContextMenu.handsontable tbody td.current,.htContextMenu.handsontable td.zeroclipboard-is-hover,.htContextMenu.handsontable tbody td.zeroclipboard-is-hover{background:var(--editor-table-accent-soft)!important;color:var(--editor-table-accent-text)!important}.htMenu.htContextMenu td.htDisabled,.htMenu.htContextMenu tbody td.htDisabled,.htMenu.htContextMenu td.htSeparator,.htMenu.htContextMenu tbody td.htSeparator,.htContextMenu.handsontable td.htDisabled,.htContextMenu.handsontable tbody td.htDisabled,.htContextMenu.handsontable td.htSeparator,.htContextMenu.handsontable tbody td.htSeparator{color:var(--editor-table-text-muted)!important}.htMenu.htContextMenu td.htSeparator,.htMenu.htContextMenu tbody td.htSeparator,.htContextMenu.handsontable td.htSeparator,.htContextMenu.handsontable tbody td.htSeparator{background:var(--editor-table-separator-surface)!important;border-top:1px solid var(--editor-table-separator-border-top)!important;border-bottom:1px solid var(--editor-table-separator-border-bottom)!important}.htMenu.htContextMenu .htSubmenu:after,.htContextMenu.handsontable .htSubmenu:after{border-left-color:color-mix(in srgb,var(--editor-table-text) 70%,transparent)!important}@media(max-width:1080px){.editor-toolbar{grid-template-columns:1fr}}@media(max-width:768px){.editor-page{width:min(100%,calc(100% - 24px));padding-top:16px;padding-bottom:24px}.editor-header-copy h1{font-size:24px}.editor-header-actions,.editor-inline-actions,.editor-bookmarks-toolbar-actions{width:100%;justify-content:flex-start}.editor-button,.editor-file-label{width:100%}.editor-operation-notice{align-items:flex-start;gap:10px}.editor-operation-notice-text{flex:auto;min-width:0;overflow-wrap:anywhere;word-break:normal}.editor-operation-notice .editor-operation-notice-close{flex:0 0 34px;width:34px;min-width:34px;min-height:34px;padding:0}.editor-restore-form{width:100%}.editor-search-box input{width:100%}.editor-search-box{flex-wrap:wrap;align-items:stretch}}</style></head><body><div class="editor-page"><header class="editor-header"><div class="editor-header-copy"><h1>{{ if eq .Locale "en" }}SuperFlare Data Editor{{ else }}SuperFlare 在线数据编辑{{ end }}</h1><p>{{ if eq .Locale "en" }}Manage categories, apps, bookmarks and backups. Saving writes your changes to the configuration files.{{ else }}管理分类、应用、书签与备份。保存后，更改会写入配置文件。{{ end }}</div><div class="editor-header-actions"><button type="button" class="editor-button" id="editor-theme-toggle" data-label-dark="{{ if eq .Locale "en" }}Dark Mode{{ else }}深色模式{{ end }}" data-label-light="{{ if eq .Locale "en" }}Light Mode{{ else }}浅色模式{{ end }}">{{ if eq .Locale "en" }}Light Mode{{ else }}浅色模式{{ end }}</button>
+<a href="/" class="editor-button" id="back-home">{{ if eq .Locale "en" }}Back to home{{ else }}返回首页{{ end }}</a></div></header><div id="editor-operation-notice" class="editor-operation-notice{{ if .OperationNotice }} is-visible editor-operation-notice-{{ index .OperationNotice "Type" }}{{ end }}"{{ if not .OperationNotice }} hidden{{ end }}><div class="editor-operation-notice-text" id="editor-operation-notice-text" role="status">{{ if .OperationNotice }}{{ index .OperationNotice "Text" }}{{ end }}</div><button type="button" class="editor-button editor-operation-notice-close" id="editor-operation-notice-close" aria-label="{{ if eq .Locale "en" }}Close{{ else }}&#20851;&#38381;{{ end }}">&#215;</button></div>{{ if .RenderWarnings }}<div class="editor-render-warnings">{{ range .RenderWarnings }}<div class="editor-render-warning">{{ . }}</div>{{ end }}</div>{{ end }}<section class="editor-toolbar"><div class="editor-panel editor-panel-full"><div class="editor-panel-header"><h2>{{ if eq .Locale "en" }}Backup and restore{{ else }}数据备份与恢复{{ end }}</h2><div class="editor-backup-row"><button type="button" class="editor-button" id="editor-backup-download">{{ if eq .Locale "en" }}Download backup{{ else }}下载备份{{ end }}</button><form action="/editor/restore" method="POST" enctype="multipart/form-data" class="editor-restore-form"><input class="editor-file-input" type="file" name="backup" id="editor-backup-file" accept=".zip,.yml,.yaml">
+<label class="editor-file-label" for="editor-backup-file"><span id="editor-backup-file-name">{{ if eq .Locale "en" }}Choose a backup file{{ else }}选择备份文件{{ end }}</span>
+</label><button class="editor-button" id="editor-restore-submit">{{ if eq .Locale "en" }}Restore backup{{ else }}恢复备份{{ end }}</button></form></div></div></div></section><main class="editor-shell"><section class="editor-panel editor-table-panel"><div class="editor-table-header"><div><h2>{{ if eq .Locale "en" }}Categories{{ else }}分类管理{{ end }}</h2><p>{{ if eq .Locale "en" }}Renaming a category also updates its bookmarks.{{ else }}重命名分类时，对应书签的分类也会更新。{{ end }}</div><div class="editor-inline-actions"><button type="button" class="editor-button" id="editor-add-category"><span aria-hidden="true">+</span> {{ if eq .Locale "en" }}Add category{{ else }}新增分类{{ end }}</button>
+<button type="button" class="editor-button update-data">{{ if eq .Locale "en" }}Save all changes{{ else }}保存全部更改{{ end }}</button></div></div><div class="editor-table-shell"><div id="container-category"></div></div></section><section class="editor-panel editor-table-panel"><div class="editor-table-header"><div><h2>{{ if eq .Locale "en" }}Apps and bookmarks{{ else }}应用与书签编辑{{ end }}</h2></div></div><div class="editor-bookmarks-toolbar"><div class="editor-search-box"><label for="search">{{ if eq .Locale "en" }}Find in table{{ else }}表内查找{{ end }}</label>
+<input id="search" placeholder="{{ if eq .Locale "en" }}Name, link, description or category{{ else }}名称、链接、描述或分类{{ end }}">
+<button type="button" class="editor-button" id="search-apply">{{ T .Locale "search_placeholder" }}</button>
+<span class="editor-search-status" id="search-result-count" role="status"></span><div class="editor-search-nav"><button type="button" class="editor-button" id="search-prev">{{ if eq .Locale "en" }}Previous{{ else }}上一项{{ end }}</button>
+<button type="button" class="editor-button" id="search-next">{{ if eq .Locale "en" }}Next{{ else }}下一项{{ end }}</button></div></div><div class="editor-bookmarks-toolbar-actions"><button type="button" class="editor-button" id="editor-add-bookmark"><span aria-hidden="true">+</span> {{ if eq .Locale "en" }}Add bookmark{{ else }}新增书签{{ end }}</button>
+<a class="editor-button" href="/icons" target="_blank" rel="noopener noreferrer">{{ if eq .Locale "en" }}Browse icons{{ else }}打开图标页{{ end }}</a>
+<button type="button" class="editor-button" id="check-links">{{ if eq .Locale "en" }}Check public links{{ else }}检查公网链接状态{{ end }}</button>
+<button type="button" class="editor-button update-data">{{ if eq .Locale "en" }}Save all changes{{ else }}保存全部更改{{ end }}</button></div></div><div class="editor-table-shell"><div id="container-bookmarks"></div></div></section></main><form action="/editor" method="POST" id="form-categories" class="editor-form"><input type="hidden" name="categories" id="field-categories">
+<input type="hidden" name="bookmarks" id="field-bookmarks">
+<input type="hidden" name="revision" id="field-revision" value="{{.DataRevision}}"></form></div><script type="text/html" id="data-categories">{{.DataCategories}}</script>
 <script type="text/html" id="data-bookmarks">{{.DataBookmarks}}</script>
 <script type="text/html" id="data-ports">{{.DataPorts}}</script>
 <script>const tableLocale = '{{.Locale}}' === 'en' ? 'en-US' : 'zh-CN';
 const editorMessages = {
 saveSuccess: '{{ if eq .Locale "en" }}Data saved successfully.{{ else }}\u6570\u636e\u4fdd\u5b58\u6210\u529f\u3002{{ end }}',
-restoreSuccess: '{{ if eq .Locale "en" }}Backup restore completed successfully.{{ else }}\u5907\u4efd\u6062\u590d\u5bfc\u5165\u6210\u529f\u3002{{ end }}',
+saveNewerChanges: '{{ if eq .Locale "en" }}The submitted data was saved. Newer changes are still unsaved.{{ else }}提交的数据已保存，保存期间的新修改尚未保存。{{ end }}',
+saveConflict: '{{ if eq .Locale "en" }}Data changed elsewhere. Copy your changes before reloading the editor, then merge them with the latest data.{{ else }}数据已在其他页面或配置文件中修改。请先复制保留当前修改，再刷新编辑器并合并最新数据后保存。{{ end }}',
+saveFailedShort: '{{ if eq .Locale "en" }}Save failed{{ else }}保存失败{{ end }}',
 backupSuccess: '{{ if eq .Locale "en" }}Backup export completed and download started.{{ else }}\u5907\u4efd\u5bfc\u51fa\u6210\u529f\uff0c\u4e0b\u8f7d\u5df2\u5f00\u59cb\u3002{{ end }}',
 backupFailed: '{{ if eq .Locale "en" }}Backup export failed{{ else }}\u5907\u4efd\u5bfc\u51fa\u5931\u8d25{{ end }}',
 backupFailedShort: '{{ if eq .Locale "en" }}Export failed{{ else }}\u5bfc\u51fa\u5931\u8d25{{ end }}',
@@ -33,46 +38,74 @@ backupRunning: '{{ if eq .Locale "en" }}Exporting...{{ else }}\u5bfc\u51fa\u4e2d
 restoreRunning: '{{ if eq .Locale "en" }}Restoring...{{ else }}\u6062\u590d\u4e2d...{{ end }}',
 restoreFailedShort: '{{ if eq .Locale "en" }}Restore failed{{ else }}\u6062\u590d\u5931\u8d25{{ end }}',
 restoreMissingFile: '{{ if eq .Locale "en" }}Select a backup file before restoring.{{ else }}\u8bf7\u5148\u9009\u62e9\u5907\u4efd\u6587\u4ef6\u518d\u6267\u884c\u6062\u590d\u3002{{ end }}',
+restoreConfirm: '{{ if eq .Locale "en" }}Restore this backup? Files included in the backup will replace their current versions.{{ else }}确定恢复此备份吗？备份中包含的文件会覆盖当前对应的配置。{{ end }}',
+restoreConfirmDraft: '{{ if eq .Locale "en" }}Your unsaved edits will be discarded if the restore succeeds.{{ else }}恢复成功后，当前未保存的更改将被丢弃。{{ end }}',
 backupChooseFile: '{{ if eq .Locale "en" }}Choose a backup file{{ else }}\u9009\u62e9\u5907\u4efd\u6587\u4ef6{{ end }}',
 operationFailed: '{{ if eq .Locale "en" }}Operation failed{{ else }}\u64cd\u4f5c\u5931\u8d25{{ end }}',
 closeNotice: '{{ if eq .Locale "en" }}Close{{ else }}\u5173\u95ed{{ end }}',
 saveRunning: '{{ if eq .Locale "en" }}Saving...{{ else }}\u4fdd\u5b58\u4e2d...{{ end }}',
 validationFixData: '{{ if eq .Locale "en" }}Fix data first{{ else }}\u8bf7\u5148\u4fee\u6b63\u6570\u636e{{ end }}',
-validationFailed: '{{ if eq .Locale "en" }}Data validation failed{{ else }}\u6570\u636e\u6821\u9a8c\u5931\u8d25{{ end }}'
+validationFailed: '{{ if eq .Locale "en" }}Data validation failed{{ else }}\u6570\u636e\u6821\u9a8c\u5931\u8d25{{ end }}',
+searchIdle: '{{ if eq .Locale "en" }}No search{{ else }}无搜索{{ end }}',
+searchNoMatches: '{{ if eq .Locale "en" }}No matches{{ else }}未找到{{ end }}',
+checkRunning: '{{ if eq .Locale "en" }}Checking…{{ else }}检查中…{{ end }}',
+checkFailed: '{{ if eq .Locale "en" }}Check failed{{ else }}检查失败{{ end }}',
+checkNoIssues: '{{ if eq .Locale "en" }}No issues reported{{ else }}未报告异常{{ end }}',
+checkInvalid: '{{ if eq .Locale "en" }}Invalid{{ else }}无效{{ end }}',
+checkRestricted: '{{ if eq .Locale "en" }}Restricted{{ else }}受限{{ end }}',
+checkUnstable: '{{ if eq .Locale "en" }}Unstable{{ else }}不稳定{{ end }}',
+categoryInUse: '{{ T .Locale "editor_category_in_use" }}',
+categoryReserved: '{{ T .Locale "editor_category_reserved" }}',
+categoryDuplicate: '{{ T .Locale "editor_category_duplicate" }}',
+categoryNameRequired: '{{ T .Locale "editor_category_name_required" }}',
+bookmarkNameRequired: '{{ T .Locale "editor_bookmark_name_required" }}',
+bookmarkURLRequired: '{{ T .Locale "editor_bookmark_url_required" }}',
+bookmarkCategoryMissing: '{{ T .Locale "editor_bookmark_category_missing" }}'
 };
+function editorValidationMessage(key, values) {
+return editorMessages[key].replace(/\{(\w+)\}/g, function (placeholder, name) {
+return Object.hasOwn(values, name) ? values[name] : placeholder;
+});
+}
 const TABLE_MAX_COLUMN_WIDTH = 320;
-let categories = JSON.parse(document.getElementById("data-categories").innerHTML) || [];
-const dataBookmarks = JSON.parse(document.getElementById("data-bookmarks").innerHTML) || [];
+let categories = JSON.parse(document.getElementById("data-categories").textContent) || [];
+const dataBookmarks = JSON.parse(document.getElementById("data-bookmarks").textContent) || [];
 const dataPorts = JSON.parse(document.getElementById("data-ports").textContent || "[]") || [];
 const enableLocalPortPicker = {{ if .ShowEditorPortPicker }}true{{ else }}false{{ end }};
 const localLANHost = '{{.LocalLANHost}}';
 const localPortDisplayMap = {};
 const localPortValueMap = {};
 const localPortOptions = dataPorts.map(function (item) {
-const protocol = (item.Protocol || 'tcp').toLowerCase() === 'udp' ? 'udp' : 'tcp';
-const scheme = protocol === 'udp' ? 'udp' : 'http';
-const value = scheme + '://' + localLANHost + ':' + item.Port;
+const value = 'http://' + localLANHost + ':' + item.Port;
 const label = '\u3010' + item.Port + '\u3011' + (item.Remark || '');
 localPortDisplayMap[value] = label;
 localPortValueMap[label] = value;
 return label;
 });
 let categoriesMap = categories.reduce((prev, item) => {
+item.ID = String(item.ID == null ? '' : item.ID).trim();
+item.Name = String(item.Name == null ? '' : item.Name).trim();
 prev[item.ID] = item.Name; return prev;
-}, {})
+}, Object.create(null))
 const FLARE_FIX_CATEGORY = ["[SuperFlare \u5e94\u7528]"];
-let bookmarks = dataBookmarks.filter(item => item.Category && item.Name && item.URL).map(item => {
-if (item.Category === '_FLARE_FIXED_CATEGORY') {
+const FLARE_UNGROUPED_CATEGORY = "[SuperFlare \u672a\u5206\u7c7b]";
+let bookmarks = dataBookmarks.filter(item => item.Name && item.URL).map(item => {
+const categoryID = String(item.Category == null ? '' : item.Category).trim();
+if (item.IsApplication === true) {
 item.Category = FLARE_FIX_CATEGORY[0];
+} else if (!categoryID) {
+item.Category = FLARE_UNGROUPED_CATEGORY;
+} else if (Object.prototype.hasOwnProperty.call(categoriesMap, categoryID)) {
+item.Category = categoriesMap[categoryID];
 } else {
-item.Category = categoriesMap[item.Category]
+item.Category = categoryID;
 }
 item.LocalURL = item.LocalURL || '';
 item.Private = item.Private === true;
 item.Favorite = item.Category === FLARE_FIX_CATEGORY[0] ? false : item.Favorite === true;
 item.CheckResult = '';
 return item;
-}).sort((a, b) => (a.Category + "").localeCompare(b.Category + ""));
+});
 function clampEditorColumnWidth(width) {
 return typeof width === 'number' ? Math.min(width, TABLE_MAX_COLUMN_WIDTH) : width;
 }
@@ -117,7 +150,8 @@ instance.render();
         const instanceCategories = new Handsontable(document.getElementById('container-category'), {
             language: tableLocale,
             data: categories,
-            colHeaders: ['\u5206\u7c7b\u540d\u79f0'],
+            dataSchema: { ID: '', Name: '' },
+            colHeaders: [tableLocale === 'en-US' ? 'Category name' : '\u5206\u7c7b\u540d\u79f0'],
             rowHeaders: true,
             manualRowMove: true,
             contextMenu: ["row_above", "row_below", "remove_row", "---------", "undo", "redo", "---------", "cut", "copy"],
@@ -139,35 +173,62 @@ instance.render();
             afterColumnResize: function () {
                 scheduleTableLayoutSync();
             },
-            afterChange: (changes, source) => {
-                if (!changes || source === 'loadData' || source === 'category-duplicate-revert') { return }
-                clearEditorValidationState(false);
-                if (!changes) { return }
+            beforeChange: function (changes) {
+                if (!changes) { return; }
+                const nextCategories = getVisualCategoryRows();
+                const usedCategories = new Set(getVisualBookmarkRows().map(function (item) {
+                    return normalizeEditorText(item.Category);
+                }));
+                getBookmarkCategoryHistoryCells().forEach(function ([values, index]) {
+                    usedCategories.add(normalizeEditorText(values[index]));
+                });
+                for (const [row, prop, oldValue, newValue] of changes) {
+                    const oldName = normalizeEditorText(oldValue);
+                    if (prop === 'Name' && oldName && !normalizeEditorText(newValue) && usedCategories.has(oldName)) {
+                        showEditorOperationNotice('error', editorMessages.categoryInUse, false);
+                        return false;
+                    }
+                }
                 changes.forEach(function ([row, prop, oldValue, newValue]) {
                     if (prop !== 'Name') { return; }
-                    const normalizedOldValue = (oldValue == null ? '' : String(oldValue)).trim();
-                    const normalizedNewValue = (newValue == null ? '' : String(newValue)).trim();
-                    if (normalizedNewValue === FLARE_FIX_CATEGORY[0]) {
-                        instanceCategories.setDataAtRowProp(row, 'Name', normalizedOldValue, 'category-duplicate-revert');
-                        showEditorOperationNotice('error', '分类名称“' + normalizedNewValue + '”为保留名称，请使用其他名称。', false);
-                        return;
+                    nextCategories[row] = { Name: normalizeEditorText(newValue) };
+                });
+                const seen = new Set();
+                for (const item of nextCategories) {
+                    const name = normalizeEditorText(item.Name);
+                    if (name === FLARE_FIX_CATEGORY[0] || name === FLARE_UNGROUPED_CATEGORY) {
+                        showEditorOperationNotice('error', editorValidationMessage('categoryReserved', { name }), false);
+                        return false;
                     }
-                    if (normalizedNewValue !== '' && getVisualCategoryRows().some(function (item, index) {
-                        return index !== row && item.Name === normalizedNewValue;
-                    })) {
-                        instanceCategories.setDataAtRowProp(row, 'Name', normalizedOldValue, 'category-duplicate-revert');
-                        showEditorOperationNotice('error', '分类名称“' + normalizedNewValue + '”重复，请保持唯一。', false);
-                        return;
+                    if (name && seen.has(name)) {
+                        showEditorOperationNotice('error', editorValidationMessage('categoryDuplicate', { name }), false);
+                        return false;
                     }
-                    if (String(newValue) !== normalizedNewValue) {
-                        instanceCategories.setDataAtRowProp(row, 'Name', normalizedNewValue, 'category-normalize');
+                    if (name) { seen.add(name); }
+                }
+                changes.forEach(function (change) {
+                    if (change[1] === 'Name') { change[3] = normalizeEditorText(change[3]); }
+                });
+            },
+            afterChange: (changes, source) => {
+                if (!changes || source === 'loadData') { return; }
+                clearEditorValidationState(false);
+                const renames = new Map();
+                changes.forEach(function ([row, prop, oldValue, newValue]) {
+                    const oldName = normalizeEditorText(oldValue);
+                    if (prop === 'Name' && oldName) { renames.set(oldName, normalizeEditorText(newValue)); }
+                });
+                // Apply the complete batch once, so swaps cannot cascade.
+                bookmarks = getVisualBookmarkRows().map(function (bookmark) {
+                    if (renames.has(bookmark.Category)) {
+                        bookmark.Category = renames.get(bookmark.Category);
                     }
-                    bookmarks = bookmarks.map(function (bookmark) {
-                        if (bookmark.Category == normalizedOldValue) {
-                            bookmark.Category = normalizedNewValue;
-                        }
-                        return bookmark;
-                    });
+                    return bookmark;
+                });
+                getBookmarkCategoryHistoryCells().forEach(function ([values, index]) {
+                    if (renames.has(values[index])) {
+                        values[index] = renames.get(values[index]);
+                    }
                 });
                 syncCategoriesStateFromTable();
                 updateDataTable()
@@ -195,6 +256,9 @@ instance.render();
         const operationNoticeText = document.getElementById('editor-operation-notice-text');
         const operationNoticeClose = document.getElementById('editor-operation-notice-close');
         const backupDownloadButton = document.getElementById('editor-backup-download');
+        const checkLinksButton = document.getElementById('check-links');
+        const addCategoryButton = document.getElementById('editor-add-category');
+        const addBookmarkButton = document.getElementById('editor-add-bookmark');
         const restoreForm = document.querySelector('.editor-restore-form');
         const restoreSubmitButton = document.getElementById('editor-restore-submit');
         const searchField = document.querySelector('#search');
@@ -220,8 +284,11 @@ instance.render();
         const BOOKMARK_CONTEXT_MENU_ITEMS = ["row_above", "row_below", "remove_row", "---------", "undo", "redo", "---------", "cut", "copy"];
         let instanceBookmarks = new Handsontable(container, {
             language: tableLocale,
-            data: Array.from(bookmarks),
-            colHeaders: ['\u4e66\u7b7e\u540d\u79f0', '\u4e66\u7b7e\u5730\u5740', '\u5185\u7f51\u5730\u5740', '\u7c7b\u578b', '\u5b50\u76ee\u5f55', '\u56fe\u6807', '\u63cf\u8ff0', '\u672a\u767b\u5f55\u9690\u85cf', '\u6536\u85cf', '\u68c0\u67e5\u7ed3\u679c'],
+            data: bookmarks.map(item => Object.assign({}, item)),
+            dataSchema: { Name: '', URL: '', LocalURL: '', Category: FLARE_UNGROUPED_CATEGORY, Subdir: '', Icon: '', Desc: '', Private: false, Favorite: false, CheckResult: '', CheckStatus: '' },
+            colHeaders: tableLocale === 'en-US'
+                ? ['Name', 'URL', 'LAN URL', 'Type', 'Subfolder', 'Icon', 'Description', 'Private', 'Favorite', 'Link status']
+                : ['\u4e66\u7b7e\u540d\u79f0', '\u4e66\u7b7e\u5730\u5740', '\u5185\u7f51\u5730\u5740', '\u7c7b\u578b', '\u5b50\u76ee\u5f55', '\u56fe\u6807', '\u63cf\u8ff0', '\u672a\u767b\u5f55\u9690\u85cf', '\u6536\u85cf', '\u68c0\u67e5\u7ed3\u679c'],
             rowHeaders: true,
             manualRowMove: true,
             contextMenu: BOOKMARK_CONTEXT_MENU_ITEMS,
@@ -246,7 +313,7 @@ instance.render();
                 const cellProperties = {};
                 if (prop === 'Favorite') {
                     const sourceRow = this.instance.getSourceDataAtRow(row);
-                    cellProperties.readOnly = !!sourceRow && sourceRow.Category === FLARE_FIX_CATEGORY[0];
+                    cellProperties.readOnly = this.instance.getSettings().readOnly === true || (!!sourceRow && sourceRow.Category === FLARE_FIX_CATEGORY[0]);
                 }
                 return cellProperties;
             },
@@ -262,12 +329,35 @@ instance.render();
         });
 
         function setBookmarkTableLinkCheckLocked(locked) {
+            addCategoryButton.disabled = locked;
+            addBookmarkButton.disabled = locked;
+            instanceCategories.updateSettings({
+                readOnly: locked,
+                manualRowMove: !locked,
+                contextMenu: locked ? false : BOOKMARK_CONTEXT_MENU_ITEMS
+            });
             instanceBookmarks.updateSettings({
                 readOnly: locked,
                 manualRowMove: !locked,
                 contextMenu: locked ? false : BOOKMARK_CONTEXT_MENU_ITEMS
             });
         }
+
+        function appendEditorRow(table) {
+            if (table.getSettings().readOnly) { return; }
+            const row = table.countRows();
+            table.alter('insert_row', row, 1);
+            table.selectCell(row, 0);
+            table.scrollViewportTo(row, 0);
+            scheduleTableLayoutSync();
+        }
+
+        addCategoryButton.addEventListener('click', function () {
+            appendEditorRow(instanceCategories);
+        });
+        addBookmarkButton.addEventListener('click', function () {
+            appendEditorRow(instanceBookmarks);
+        });
 
         function getCurrentEditorTheme() {
             return document.documentElement.getAttribute('data-editor-theme') === 'light' ? 'light' : 'dark';
@@ -425,6 +515,7 @@ instance.render();
             const exportedBookmarks = exportBookmarksCSV();
             document.getElementById('field-categories').value = exportedCategories;
             document.getElementById('field-bookmarks').value = exportedBookmarks;
+            return JSON.stringify([exportedCategories, exportedBookmarks]);
         }
 
         function csvEscape(value) {
@@ -448,7 +539,7 @@ instance.render();
                     item.Name,
                     item.URL,
                     item.LocalURL,
-                    item.Category,
+                    normalizeEditorText(item.Category) || FLARE_UNGROUPED_CATEGORY,
                     item.Subdir,
                     item.Icon,
                     item.Desc,
@@ -557,16 +648,6 @@ instance.render();
             return simpleMatch[1].trim();
         }
 
-        function replaceEditorDocumentWithHTML(html) {
-            if (typeof html !== 'string' || html.trim() === '') {
-                return false;
-            }
-            document.open();
-            document.write(html);
-            document.close();
-            return true;
-        }
-
         function formatEditorFailureMessage(prefix, detail) {
             const title = (prefix || '').trim() || editorMessages.operationFailed;
             const reason = (detail || '').trim();
@@ -660,6 +741,32 @@ instance.render();
             });
         }
 
+        async function requireEditorOperationSuccess(response, notice, fallback) {
+            if (!response.ok) {
+                return parseEditorJSONFailure(response, fallback);
+            }
+            const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+            if (response.redirected || contentType !== 'application/json') {
+                throw new Error(fallback);
+            }
+            const payload = await response.json();
+            if (!payload || payload.notice !== notice) {
+                throw new Error(fallback);
+            }
+            return payload;
+        }
+
+        async function requireEditorSaveSuccess(response) {
+            if (response.status === 409) {
+                throw new Error(editorMessages.saveConflict);
+            }
+            const payload = await requireEditorOperationSuccess(response, 'save_success', editorMessages.operationFailed);
+            if (typeof payload.revision !== 'string' || !payload.revision) {
+                throw new Error(editorMessages.operationFailed);
+            }
+            return payload;
+        }
+
         function summarizeEditorErrorMessage(message, fallbackMessage) {
             const trimmed = (message || '').trim();
             if (!trimmed) {
@@ -675,13 +782,19 @@ instance.render();
             return collapsed;
         }
 
-        function responseLooksLikeHTML(contentType, raw) {
-            const normalizedContentType = String(contentType || '').toLowerCase();
-            if (normalizedContentType.indexOf('text/html') !== -1) {
-                return true;
+        async function requireEditorBackupSuccess(response) {
+            if (!response.ok) {
+                return parseEditorJSONFailure(response, editorMessages.backupFailed);
             }
-            const trimmed = String(raw || '').trim().toLowerCase();
-            return trimmed.indexOf('<!doctype html') === 0 || trimmed.indexOf('<html') === 0 || trimmed.indexOf('status-panel') !== -1;
+            const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+            if (response.redirected || contentType !== 'application/zip') {
+                throw new Error(editorMessages.backupFailed);
+            }
+            const blob = await response.blob();
+            if (!blob.size) {
+                throw new Error(editorMessages.backupFailed);
+            }
+            return { response: response, blob: blob };
         }
 
         function validateEditorDataBeforeSubmit() {
@@ -694,21 +807,21 @@ instance.render();
                 if (!name) {
                     addEditorValidationTarget('categories', index, 'Name');
                     return {
-                        message: '第 ' + (index + 1) + ' 行分类缺少名称，请补全后再保存；如果要删除请使用右键菜单的删除行。',
+                        message: editorValidationMessage('categoryNameRequired', { row: index + 1 }),
                         target: { scope: 'categories', row: index, prop: 'Name' }
                     };
                 }
-                if (name === FLARE_FIX_CATEGORY[0]) {
+                if (name === FLARE_FIX_CATEGORY[0] || name === FLARE_UNGROUPED_CATEGORY) {
                     addEditorValidationTarget('categories', index, 'Name');
                     return {
-                        message: '分类名称“' + name + '”为保留名称，请使用其他名称。',
+                        message: editorValidationMessage('categoryReserved', { name }),
                         target: { scope: 'categories', row: index, prop: 'Name' }
                     };
                 }
                 if (seenCategories.has(name)) {
                     addEditorValidationTarget('categories', index, 'Name');
                     return {
-                        message: '分类名称“' + name + '”重复，请保持唯一。',
+                        message: editorValidationMessage('categoryDuplicate', { name }),
                         target: { scope: 'categories', row: index, prop: 'Name' }
                     };
                 }
@@ -727,19 +840,19 @@ instance.render();
                     const missingProp = !name ? 'Name' : 'URL';
                     addEditorValidationTarget('bookmarks', rowIndex, missingProp);
                     return {
-                        message: '第 ' + (rowIndex + 1) + ' 行书签缺少' + (!name ? '名称' : '地址') + '，请补全后再保存；如果要删除请使用右键菜单的删除行。',
+                        message: editorValidationMessage(!name ? 'bookmarkNameRequired' : 'bookmarkURLRequired', { row: rowIndex + 1 }),
                         target: { scope: 'bookmarks', row: rowIndex, prop: missingProp }
                     };
                 }
 
                 const categoryName = normalizeEditorText(bookmark.Category);
-                if (!categoryName || categoryName === FLARE_FIX_CATEGORY[0]) {
+                if (!categoryName || categoryName === FLARE_FIX_CATEGORY[0] || categoryName === FLARE_UNGROUPED_CATEGORY) {
                     continue;
                 }
                 if (!seenCategories.has(categoryName)) {
                     addEditorValidationTarget('bookmarks', rowIndex, 'Category');
                     return {
-                        message: '书签“' + name + '”引用了不存在的分类“' + categoryName + '”。',
+                        message: editorValidationMessage('bookmarkCategoryMissing', { name, category: categoryName }),
                         target: { scope: 'bookmarks', row: rowIndex, prop: 'Category' }
                     };
                 }
@@ -750,71 +863,152 @@ instance.render();
 
         getEditorButtonDefaultLabel(backupDownloadButton);
         getEditorButtonDefaultLabel(restoreSubmitButton);
+        getEditorButtonDefaultLabel(checkLinksButton);
 
-        Array.from(document.getElementsByClassName('update-data')).forEach(function (btn) {
-            getEditorButtonDefaultLabel(btn);
-            btn.addEventListener('click', function (event) {
+        const editorSaveButtons = Array.from(document.getElementsByClassName('update-data'));
+        const editorRevisionField = document.getElementById('field-revision');
+        let editorSaveInFlight = false;
+        let editorRestoreInFlight = false;
+        let editorSaveFeedbackTimer = null;
+        let editorSavedSnapshot = editorDataSnapshot();
+
+        function editorDataSnapshot() {
+            return JSON.stringify([exportCategoriesCSV(), exportBookmarksCSV()]);
+        }
+
+        function editorHasUnsavedChanges() {
+            return editorDataSnapshot() !== editorSavedSnapshot || [instanceCategories, instanceBookmarks].some(function (table) {
+                const editor = table.getActiveEditor();
+                return editor && editor.isOpened() && String(editor.getValue() ?? '') !== String(editor.originalValue ?? '');
+            });
+        }
+
+        function guardEditorDraft(event) {
+            if (editorSaveInFlight || editorRestoreInFlight || editorHasUnsavedChanges()) {
                 event.preventDefault();
-                const validationError = validateEditorDataBeforeSubmit();
-                if (validationError) {
-                    const message = validationError.message || editorMessages.validationFailed;
-                    if (instanceCategories && instanceCategories.render) { instanceCategories.render(); }
-                    if (instanceBookmarks && instanceBookmarks.render) { instanceBookmarks.render(); }
-                    focusEditorValidationCell(validationError.target);
-                    showEditorValidationError(btn, message);
-                    return;
-                }
-                bindData();
-                btn.disabled = true;
-                setButtonState(btn, 'editor-button-state-neutral', editorMessages.saveRunning);
-                const form = document.getElementById('form-categories');
-                fetch(form.action || '/editor', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-                        'Accept': 'application/json,text/html;q=0.8,*/*;q=0.5'
-                    },
-                    body: new URLSearchParams(new FormData(form)).toString()
-                }).then(function (response) {
-                    if (!response.ok) {
-                        return parseEditorJSONFailure(response, editorMessages.operationFailed);
+                event.returnValue = true;
+            }
+        }
+        window.addEventListener('beforeunload', guardEditorDraft);
+
+        function commitOpenEditorCells() {
+            return Promise.all([instanceCategories, instanceBookmarks].map(function (table) {
+                return new Promise(function (resolve) {
+                    const editor = table.getActiveEditor();
+                    if (editor && editor.isOpened()) {
+                        editor.finishEditing(false, false, resolve);
+                    } else {
+                        resolve(true);
                     }
-                    return response.json().catch(function () {
-                        return {};
+                });
+            })).then(function (results) { return results.every(function (result) { return result !== false; }); });
+        }
+
+        function syncEditorWriteButtons() {
+            const busy = editorSaveInFlight || editorRestoreInFlight;
+            editorSaveButtons.forEach(function (button) { button.disabled = busy; });
+            restoreSubmitButton.disabled = busy || instanceBookmarks.getSettings().readOnly;
+        }
+
+        editorSaveButtons.forEach(function (btn) {
+            getEditorButtonDefaultLabel(btn);
+            btn.addEventListener('click', async function (event) {
+                event.preventDefault();
+                if (editorSaveInFlight || editorRestoreInFlight) { return; }
+                editorSaveInFlight = true;
+                syncEditorWriteButtons();
+                if (editorSaveFeedbackTimer !== null) {
+                    window.clearTimeout(editorSaveFeedbackTimer);
+                    editorSaveFeedbackTimer = null;
+                }
+                editorSaveButtons.forEach(resetEditorButton);
+                try {
+                    if (!await commitOpenEditorCells()) { return; }
+                    const validationError = validateEditorDataBeforeSubmit();
+                    if (validationError) {
+                        instanceCategories.render();
+                        instanceBookmarks.render();
+                        focusEditorValidationCell(validationError.target);
+                        showEditorValidationError(btn, validationError.message || editorMessages.validationFailed);
+                        return;
+                    }
+                    const submittedSnapshot = bindData();
+                    const form = document.getElementById('form-categories');
+                    editorSaveButtons.forEach(function (button) {
+                        setButtonState(button, 'editor-button-state-neutral', editorMessages.saveRunning);
                     });
-                }).then(function () {
-                    showEditorOperationNotice('success', editorMessages.saveSuccess, true);
-                    setButtonState(btn, 'editor-button-state-success', getEditorButtonDefaultLabel(btn));
-                    window.setTimeout(function () {
-                        resetEditorButton(btn);
-                        btn.disabled = false;
-                    }, 1800);
-                }).catch(function (error) {
+                    const response = await fetch(form.action || '/editor', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                            'Accept': 'application/json,text/html;q=0.8,*/*;q=0.5'
+                        },
+                        body: new URLSearchParams(new FormData(form)).toString()
+                    });
+                    const payload = await requireEditorSaveSuccess(response);
+                    editorRevisionField.value = payload.revision;
+                    editorSavedSnapshot = submittedSnapshot;
+                    const hasNewerChanges = editorHasUnsavedChanges();
+                    showEditorOperationNotice(hasNewerChanges ? 'warning' : 'success', hasNewerChanges ? editorMessages.saveNewerChanges : editorMessages.saveSuccess, !hasNewerChanges);
+                    editorSaveButtons.forEach(function (button) {
+                        setButtonState(button, hasNewerChanges ? 'editor-button-state-warning' : 'editor-button-state-success', getEditorButtonDefaultLabel(button));
+                    });
+                } catch (error) {
                     const detail = error && error.message ? error.message : editorMessages.operationFailed;
                     showEditorOperationNotice('error', formatEditorFailureMessage(editorMessages.operationFailed, detail), false);
-                    setButtonState(btn, 'editor-button-state-error', editorMessages.validationFixData);
-                    btn.title = detail;
-                    window.setTimeout(function () {
-                        resetEditorButton(btn);
-                        btn.disabled = false;
-                    }, 2800);
-                });
+                    editorSaveButtons.forEach(function (button) {
+                        setButtonState(button, 'editor-button-state-error', editorMessages.saveFailedShort);
+                        button.title = detail;
+                    });
+                } finally {
+                    editorSaveInFlight = false;
+                    syncEditorWriteButtons();
+                    editorSaveFeedbackTimer = window.setTimeout(function () {
+                        editorSaveButtons.forEach(resetEditorButton);
+                        editorSaveFeedbackTimer = null;
+                    }, 2500);
+                }
             });
         });
 
-        restoreForm.addEventListener('submit', function (event) {
+        restoreForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            if (editorSaveInFlight || editorRestoreInFlight || instanceBookmarks.getSettings().readOnly) { return; }
             if (!fileInput.files || !fileInput.files[0]) {
-                event.preventDefault();
                 showEditorOperationNotice('error', editorMessages.restoreMissingFile, false);
-                setButtonState(restoreSubmitButton, 'editor-button-state-error', editorMessages.restoreFailedShort);
-                restoreSubmitButton.title = editorMessages.restoreMissingFile;
-                window.setTimeout(function () {
-                    resetEditorButton(restoreSubmitButton);
-                }, 2500);
+                fileInput.focus();
                 return;
             }
-            restoreSubmitButton.disabled = true;
+            const confirmMessage = editorMessages.restoreConfirm + (editorHasUnsavedChanges() ? '\n\n' + editorMessages.restoreConfirmDraft : '');
+            if (!window.confirm(confirmMessage)) { return; }
+            const restoreBody = new FormData(restoreForm);
+            editorRestoreInFlight = true;
+            syncEditorWriteButtons();
+            fileInput.disabled = true;
+            checkLinksButton.disabled = true;
+            setBookmarkTableLinkCheckLocked(true);
+            resetEditorButton(restoreSubmitButton);
             setButtonState(restoreSubmitButton, 'editor-button-state-neutral', editorMessages.restoreRunning);
+            try {
+                const response = await fetch(restoreForm.action, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json' },
+                    body: restoreBody
+                });
+                await requireEditorOperationSuccess(response, 'restore_success', editorMessages.restoreFailedShort);
+                window.removeEventListener('beforeunload', guardEditorDraft);
+                window.location.replace('/editor?notice=restore_success');
+            } catch (error) {
+                const detail = error && error.message ? error.message : editorMessages.restoreFailedShort;
+                showEditorOperationNotice('error', formatEditorFailureMessage(editorMessages.restoreFailedShort, detail), false);
+                setButtonState(restoreSubmitButton, 'editor-button-state-error', editorMessages.restoreFailedShort);
+                restoreSubmitButton.title = detail;
+                editorRestoreInFlight = false;
+                fileInput.disabled = false;
+                checkLinksButton.disabled = false;
+                setBookmarkTableLinkCheckLocked(false);
+                syncEditorWriteButtons();
+            }
         });
 
         backupDownloadButton.addEventListener('click', function (event) {
@@ -825,28 +1019,10 @@ instance.render();
             fetch('/editor/backup', {
                 method: 'GET',
                 headers: {
-                    'Accept': 'application/zip,text/html;q=0.9,*/*;q=0.8',
+                    'Accept': 'application/zip,application/json;q=0.9',
                     'X-SuperFlare-Async': '1'
                 }
-            }).then(function (response) {
-                const contentType = response.headers.get('Content-Type') || '';
-                if (contentType.toLowerCase().indexOf('text/html') !== -1) {
-                    return response.text().then(function (raw) {
-                        if (responseLooksLikeHTML(contentType, raw) && replaceEditorDocumentWithHTML(raw)) {
-                            const handled = new Error('editor-page-replaced');
-                            handled.__editorHandled = true;
-                            throw handled;
-                        }
-                        throw new Error(summarizeEditorErrorMessage(raw, editorMessages.backupFailed));
-                    });
-                }
-                if (!response.ok) {
-                    return parseEditorJSONFailure(response, editorMessages.backupFailed);
-                }
-                return response.blob().then(function (blob) {
-                    return { response: response, blob: blob };
-                });
-            }).then(function (payload) {
+            }).then(requireEditorBackupSuccess).then(function (payload) {
                 if (!payload) { return; }
                 const filename = parseDownloadFilename(payload.response.headers.get('Content-Disposition')) || 'superflare-backup.zip';
                 const downloadURL = window.URL.createObjectURL(payload.blob);
@@ -868,9 +1044,6 @@ instance.render();
                     btn.disabled = false;
                 }, 2500);
             }).catch(function (error) {
-                if (error && error.__editorHandled) {
-                    return;
-                }
                 const detail = error && error.message ? error.message : editorMessages.backupFailed;
                 showEditorOperationNotice('error', formatEditorFailureMessage(editorMessages.backupFailed, detail), false);
                 setButtonState(btn, 'editor-button-state-error', editorMessages.backupFailedShort);
@@ -890,7 +1063,7 @@ instance.render();
                 { data: 'Name', renderer: textSearchRenderer },
                 { data: 'URL', renderer: textSearchRenderer },
                 localURLColumn,
-                { data: 'Category', editor: 'select', selectOptions: FLARE_FIX_CATEGORY.concat(categories.map(item => item.Name)), allowInvalid: false, renderer: textSearchRenderer },
+                { data: 'Category', editor: 'select', selectOptions: FLARE_FIX_CATEGORY.concat([FLARE_UNGROUPED_CATEGORY], categories.map(item => item.Name)), allowInvalid: false, renderer: textSearchRenderer },
                 { data: 'Subdir', renderer: textSearchRenderer },
                 { data: 'Icon', renderer: textSearchRenderer },
                 { data: 'Desc', renderer: textSearchRenderer },
@@ -924,11 +1097,21 @@ instance.render();
                 Subdir: table.getDataAtRowProp(rowIndex, 'Subdir') || '',
                 Icon: table.getDataAtRowProp(rowIndex, 'Icon') || '',
                 Desc: table.getDataAtRowProp(rowIndex, 'Desc') || '',
-                Private: table.getDataAtRowProp(rowIndex, 'Private') === true,
-                Favorite: table.getDataAtRowProp(rowIndex, 'Favorite') === true,
+                Private: normalizeEditorCheckbox(table.getDataAtRowProp(rowIndex, 'Private')) === true,
+                Favorite: normalizeEditorCheckbox(table.getDataAtRowProp(rowIndex, 'Favorite')) === true,
                 CheckResult: table.getDataAtRowProp(rowIndex, 'CheckResult') || '',
                 CheckStatus: table.getDataAtRowProp(rowIndex, 'CheckStatus') || ''
             };
+        }
+
+        function normalizeEditorCheckbox(value) {
+            if (value == null || typeof value === 'boolean') { return value === true; }
+            if (typeof value === 'string') {
+                const text = value.trim().toLowerCase();
+                if (text === 'true') { return true; }
+                if (text === 'false' || text === '') { return false; }
+            }
+            return null;
         }
 
         function getBookmarkVisualRowData(rowIndex) {
@@ -952,7 +1135,7 @@ instance.render();
                     prev[item.ID] = item.Name;
                 }
                 return prev;
-            }, {});
+            }, Object.create(null));
         }
 
         function getVisualBookmarkRows() {
@@ -964,6 +1147,41 @@ instance.render();
 
         function syncBookmarksStateFromTable() {
             bookmarks = getVisualBookmarkRows();
+        }
+
+        function getBookmarkCategoryHistoryCells() {
+            const history = instanceBookmarks.getPlugin('undoRedo');
+            if (!history) { return []; }
+            const column = instanceBookmarks.propToCol('Category');
+            const cells = [];
+            // The bundled Handsontable stores edits and removed rows as column-indexed arrays.
+            (history.doneActions || []).concat(history.undoneActions || []).forEach(function (action) {
+                if (action.actionType === 'change') {
+                    action.changes.forEach(function (change) {
+                        if (change[1] === column) {
+                            cells.push([change, 2], [change, 3]);
+                        }
+                    });
+                } else if (action.actionType === 'remove_row') {
+                    action.data.forEach(function (row) { cells.push([row, column]); });
+                }
+            });
+            return cells;
+        }
+
+        function updateVisualBookmarkRows(rows) {
+            const changes = [];
+            rows.forEach(function (item, visualRow) {
+                const physicalRow = instanceBookmarks.toPhysicalRow(visualRow);
+                Object.keys(item).forEach(function (prop) {
+                    if (instanceBookmarks.getDataAtRowProp(visualRow, prop) !== item[prop]) {
+                        changes.push([physicalRow, prop, item[prop]]);
+                    }
+                });
+            });
+            // Derived fields do not replace rows or add/clear user undo actions.
+            if (changes.length) { instanceBookmarks.setSourceDataAtCell(changes, undefined, undefined, 'editor-derived'); }
+            syncBookmarksStateFromTable();
         }
 
         function rebuildBookmarkSearchIndex() {
@@ -1054,9 +1272,9 @@ instance.render();
         function updateSearchStatus() {
             const total = bookmarkSearchState.matches.length;
             if (!bookmarkSearchState.term) {
-                searchResultCount.textContent = '\u65e0\u641c\u7d22';
+                searchResultCount.textContent = editorMessages.searchIdle;
             } else if (!total) {
-                searchResultCount.textContent = '\u672a\u627e\u5230';
+                searchResultCount.textContent = editorMessages.searchNoMatches;
             } else {
                 searchResultCount.textContent = (bookmarkSearchState.activeIndex + 1) + ' / ' + total;
             }
@@ -1125,12 +1343,12 @@ instance.render();
                 return '';
             }
             if (result.status === 'unstable') {
-                return result.reason || '\u8fde\u63a5\u4e0d\u7a33\u5b9a';
+                return result.reason || editorMessages.checkUnstable;
             }
             if (result.status === 'restricted') {
-                return result.reason || '\u8fde\u63a5\u53d7\u9650';
+                return result.reason || editorMessages.checkRestricted;
             }
-            return result.reason || '\u8fde\u63a5\u65e0\u6548';
+            return result.reason || editorMessages.checkInvalid;
         }
 
         function applyLinkCheckResults(results) {
@@ -1152,13 +1370,16 @@ instance.render();
                 if (!result) {
                     return;
                 }
-                const checkedRow = Math.max(0, Number(result.row || 1) - 1);
-                if (!Number.isFinite(checkedRow) || checkedRow >= checkedVisualRows.length) {
+                const checkedRow = Number(result.row) - 1;
+                if (!Number.isInteger(checkedRow) || checkedRow < 0 || checkedRow >= checkedVisualRows.length) {
                     return;
                 }
                 const visualRow = checkedVisualRows[checkedRow];
 
                 const rowData = nextRows[visualRow];
+                if (normalizeEditorText(rowData.URL) !== normalizeEditorText(result.url)) {
+                    return;
+                }
                 rowData.CheckResult = summarizeLinkCheckReason(result);
                 rowData.CheckStatus = result.status || 'invalid';
 
@@ -1171,8 +1392,7 @@ instance.render();
                 }
             });
 
-            bookmarks = nextRows;
-            instanceBookmarks.updateData(bookmarks);
+            updateVisualBookmarkRows(nextRows);
             rebuildBookmarkSearchIndex();
             runBookmarkSearch(searchField.value, false);
             instanceBookmarks.render();
@@ -1185,73 +1405,79 @@ instance.render();
             };
         }
 
-        document.getElementById('back-home').addEventListener('click', function (e) {
+        checkLinksButton.addEventListener('click', async function (e) {
             e.preventDefault();
-            location.href = "/";
-        })
-
-        document.getElementById('check-links').addEventListener('click', function (e) {
-            e.preventDefault();
-            const validationError = validateEditorDataBeforeSubmit();
-            if (validationError) {
-                const message = validationError.message || editorMessages.validationFailed;
-                if (instanceCategories && instanceCategories.render) { instanceCategories.render(); }
-                if (instanceBookmarks && instanceBookmarks.render) { instanceBookmarks.render(); }
-                focusEditorValidationCell(validationError.target);
-                showEditorValidationError(this, message);
-                return;
-            }
-            bindData();
-            setBookmarkTableLinkCheckLocked(true);
             const btn = this;
+            if (editorRestoreInFlight || btn.disabled) { return; }
+            let locked = false;
+            let showFeedback = false;
             btn.disabled = true;
-            setButtonState(btn, '', '\u68c0\u67e5\u4e2d...');
-            fetch('/editor/check-links', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookmarks: document.getElementById('field-bookmarks').value })
-            }).then(function (res) {
-                if (!res.ok) {
-                    return parseEditorJSONFailure(res, '\u68c0\u67e5\u5931\u8d25');
+            try {
+                if (!await commitOpenEditorCells()) { return; }
+                const validationError = validateEditorDataBeforeSubmit();
+                if (validationError) {
+                    instanceCategories.render();
+                    instanceBookmarks.render();
+                    focusEditorValidationCell(validationError.target);
+                    showEditorValidationError(btn, validationError.message || editorMessages.validationFailed);
+                    return;
                 }
-                return res.json();
-            }).then(function (results) {
+                bindData();
+                setBookmarkTableLinkCheckLocked(true);
+                locked = true;
+                syncEditorWriteButtons();
+                setButtonState(btn, 'editor-button-state-neutral', editorMessages.checkRunning);
+                const res = await fetch('/editor/check-links', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ bookmarks: document.getElementById('field-bookmarks').value })
+                });
+                if (!res.ok) {
+                    await parseEditorJSONFailure(res, editorMessages.checkFailed);
+                }
+                const results = await res.json();
+                if (res.redirected || (results !== null && !Array.isArray(results))) {
+                    throw new Error(editorMessages.checkFailed);
+                }
                 const summary = applyLinkCheckResults(results);
-                const unstableCount = summary.unstableCount;
-                const restrictedCount = summary.restrictedCount;
-                const invalidCount = summary.invalidCount;
+                const { invalidCount, unstableCount, restrictedCount } = summary;
+                showFeedback = true;
                 if (invalidCount || restrictedCount || unstableCount) {
                     const parts = [];
                     if (invalidCount) {
-                        parts.push('\u65e0\u6548 ' + invalidCount);
+                        parts.push(editorMessages.checkInvalid + ' ' + invalidCount);
                     }
                     if (unstableCount) {
-                        parts.push('\u4e0d\u7a33\u5b9a ' + unstableCount);
+                        parts.push(editorMessages.checkUnstable + ' ' + unstableCount);
                     }
                     if (restrictedCount) {
-                        parts.push('\u53d7\u9650 ' + restrictedCount);
+                        parts.push(editorMessages.checkRestricted + ' ' + restrictedCount);
                     }
-                    const buttonState = invalidCount ? 'editor-button-state-warning' : ((unstableCount || restrictedCount) ? 'editor-button-state-neutral' : 'editor-button-state-success');
+                    const buttonState = invalidCount ? 'editor-button-state-warning' : 'editor-button-state-neutral';
                     setButtonState(btn, buttonState, parts.join(' / '));
                 } else {
-                    setButtonState(btn, 'editor-button-state-success', '\u672a\u53d1\u73b0\u5f02\u5e38\u94fe\u63a5');
+                    setButtonState(btn, 'editor-button-state-success', editorMessages.checkNoIssues);
                 }
-                setTimeout(function () {
-                    setButtonState(btn, '', '\u68c0\u67e5\u516c\u7f51\u94fe\u63a5\u72b6\u6001');
-                    btn.disabled = false;
-                }, 2500);
-            }).catch(function (error) {
-                const detail = error && error.message ? error.message : '\u68c0\u67e5\u5931\u8d25';
-                setButtonState(btn, 'editor-button-state-error', '\u68c0\u67e5\u5931\u8d25');
+            } catch (error) {
+                showFeedback = true;
+                const detail = error && error.message ? error.message : editorMessages.checkFailed;
+                setButtonState(btn, 'editor-button-state-error', editorMessages.checkFailed);
                 btn.title = detail;
-                setTimeout(function () {
-                    setButtonState(btn, '', '\u68c0\u67e5\u516c\u7f51\u94fe\u63a5\u72b6\u6001');
-                    btn.title = '';
-                    btn.disabled = false;
-                }, 2500);
-            }).finally(function () {
-                setBookmarkTableLinkCheckLocked(false);
-            });
+                showEditorOperationNotice('error', formatEditorFailureMessage(editorMessages.checkFailed, detail), false);
+            } finally {
+                if (locked) {
+                    setBookmarkTableLinkCheckLocked(false);
+                    syncEditorWriteButtons();
+                }
+                if (showFeedback) {
+                    setTimeout(function () {
+                        resetEditorButton(btn);
+                        btn.disabled = editorRestoreInFlight;
+                    }, 2500);
+                } else {
+                    btn.disabled = editorRestoreInFlight;
+                }
+            }
         });
 
 
@@ -1261,7 +1487,7 @@ instance.render();
                     item.LocalURL = localPortValueMap[item.LocalURL];
                 }
             });
-            instanceBookmarks.updateData(bookmarks)
+            updateVisualBookmarkRows(bookmarks);
             instanceBookmarks.updateSettings({
                 columns: buildDataTableColumns()
             })
@@ -1270,34 +1496,142 @@ instance.render();
             scheduleTableLayoutSync();
         }
 
-        function enforceApplicationFavoriteInvariant(row) {
-            if (
-                instanceBookmarks.getDataAtRowProp(row, 'Category') === FLARE_FIX_CATEGORY[0] &&
-                instanceBookmarks.getDataAtRowProp(row, 'Favorite') === true
-            ) {
-                instanceBookmarks.setDataAtRowProp(row, 'Favorite', false, 'application-favorite-invariant');
-            }
+        function preserveEditorRowRemovalHistory(table, afterRestore) {
+            table.addHook('beforeRemoveRow', function (index, amount, physicalRows, source) {
+                const history = table.getPlugin('undoRedo');
+                if (!history || history.ignoreNewActions || source === 'UndoRedo.undo' || source === 'UndoRedo.redo' || source === 'auto') { return; }
+                const action = history.doneActions[history.doneActions.length - 1];
+                if (!action || action.actionType !== 'remove_row') { return; }
+                const rowOrder = table.rowIndexMapper.getIndexesSequence().slice();
+                const removedRows = physicalRows.map(function (row) {
+                    return Object.assign({}, table.getSourceDataAtRow(row));
+                });
+                const properties = Array.from({ length: table.countCols() }, function (_, col) { return table.colToProp(col); });
+                // Handsontable 11 snapshots contiguous physical rows, even after a visual move.
+                action.data = removedRows.map(function (row) { return properties.map(function (prop) { return row[prop]; }); });
+                action.undo = function (instance, done) {
+                    const restoredRows = instance.getSourceData().map(function (row) { return Object.assign({}, row); });
+                    physicalRows.map(function (physicalRow, offset) {
+                        const row = Object.assign({}, removedRows[offset]);
+                        // Category renames also update action.data while the row is deleted.
+                        properties.forEach(function (prop, col) { row[prop] = action.data[offset][col]; });
+                        return { physicalRow: physicalRow, row: row };
+                    }).sort(function (a, b) { return a.physicalRow - b.physicalRow; }).forEach(function (entry) {
+                        restoredRows.splice(entry.physicalRow, 0, entry.row);
+                    });
+                    instance.alter('insert_row', action.index, action.data.length, 'UndoRedo.undo');
+                    instance.getSettings().fixedRowsTop = action.fixedRowsTop;
+                    instance.getSettings().fixedRowsBottom = action.fixedRowsBottom;
+                    // Restore physical identities too, so earlier row moves can still be undone.
+                    instance.rowIndexMapper.setIndexesSequence(rowOrder.slice());
+                    const changes = [];
+                    restoredRows.forEach(function (row, physicalRow) {
+                        const fields = Object.assign({}, instance.getSourceDataAtRow(physicalRow), row);
+                        Object.keys(fields).forEach(function (prop) { changes.push([physicalRow, prop, row[prop]]); });
+                    });
+                    instance.setSourceDataAtCell(changes, undefined, undefined, 'UndoRedo.undo');
+                    afterRestore();
+                    done();
+                };
+            });
         }
+
+        function guardEditorHistoryReplay(table) {
+            const history = table.getPlugin('undoRedo');
+            ['undo', 'redo'].forEach(function (method) {
+                const replay = history[method];
+                history[method] = function () {
+                    const settings = table.getSettings();
+                    if (settings.readOnly) { return; }
+                    const stack = method === 'undo' ? this.doneActions : this.undoneActions;
+                    const action = stack[stack.length - 1];
+                    if (action && action.actionType === 'change' && typeof settings.beforeChange === 'function') {
+                        const changes = action.changes.map(function ([row, col, oldValue, newValue]) {
+                            const prop = table.colToProp(col);
+                            return [row, prop, table.getDataAtRowProp(row, prop), method === 'undo' ? oldValue : newValue];
+                        });
+                        // This version pops the action before beforeUndo/beforeRedo, so validate first.
+                        if (settings.beforeChange.call(table, changes) === false) { return; }
+                    }
+                    return replay.apply(this, arguments);
+                };
+            });
+        }
+
+        preserveEditorRowRemovalHistory(instanceCategories, function () {
+            clearEditorValidationState(false);
+            syncCategoriesStateFromTable();
+            updateDataTable();
+        });
+        preserveEditorRowRemovalHistory(instanceBookmarks, function () {
+            clearEditorValidationState(false);
+            syncBookmarksStateFromTable();
+            rebuildBookmarkSearchIndex();
+            refreshBookmarkSearchAfterDataChange();
+            scheduleTableLayoutSync();
+        });
+        guardEditorHistoryReplay(instanceCategories);
+        guardEditorHistoryReplay(instanceBookmarks);
+
+        function enforceApplicationFavoriteInvariant(changes) {
+            if (!changes) { return; }
+            const rows = new Map();
+            changes.forEach(function (change) {
+                if (!change) { return; }
+                const [row, prop, oldValue, newValue] = change;
+                if (prop === 'Private' || prop === 'Favorite') {
+                    // Pasting uses strings; keep the table and its undo history boolean.
+                    change[3] = normalizeEditorCheckbox(newValue) ?? (normalizeEditorCheckbox(oldValue) === true);
+                }
+                if (!rows.has(row)) {
+                    rows.set(row, {
+                        category: instanceBookmarks.getDataAtRowProp(row, 'Category'),
+                        favorite: normalizeEditorCheckbox(instanceBookmarks.getDataAtRowProp(row, 'Favorite')) === true,
+                        favoriteChange: null
+                    });
+                }
+                const next = rows.get(row);
+                if (prop === 'Category') { next.category = newValue; }
+                if (prop === 'Favorite') { next.favorite = change[3]; next.favoriteChange = change; }
+            });
+            rows.forEach(function (next, row) {
+                if (next.category !== FLARE_FIX_CATEGORY[0] || next.favorite !== true) { return; }
+                if (next.favoriteChange) {
+                    next.favoriteChange[3] = false;
+                } else {
+                    // Keep the derived favorite change in the same undo action as the category edit.
+                    changes.push([row, 'Favorite', next.favorite, false]);
+                }
+            });
+        }
+
+        instanceBookmarks.addHook('beforeChange', enforceApplicationFavoriteInvariant);
+
+        instanceBookmarks.addHook('beforeChange', function (changes) {
+            if (!changes) { return; }
+            changes.forEach(function (change) {
+                if (change && change[1] === 'LocalURL' && Object.prototype.hasOwnProperty.call(localPortValueMap, change[3])) {
+                    change[3] = localPortValueMap[change[3]];
+                }
+            });
+        });
 
         instanceBookmarks.addHook('afterChange', function (changes, source) {
             if (!changes || source === 'loadData') { return; }
             clearEditorValidationState(false);
             const touchedRows = {};
-            changes.forEach(function (change) {
-                const row = change[0];
-                const prop = change[1];
-                const newValue = change[3];
+            const resetLinkChecks = [];
+            changes.forEach(function ([row, prop, oldValue, newValue]) {
                 touchedRows[row] = true;
-                if (prop === 'LocalURL' && localPortValueMap[newValue]) {
-                    instanceBookmarks.setDataAtRowProp(row, 'LocalURL', localPortValueMap[newValue], 'local-port-select');
-                }
-                if (source !== 'application-favorite-invariant') {
-                    enforceApplicationFavoriteInvariant(row);
+                if (prop === 'URL' && normalizeEditorText(oldValue) !== normalizeEditorText(newValue)) {
+                    const physicalRow = instanceBookmarks.toPhysicalRow(row);
+                    resetLinkChecks.push([physicalRow, 'CheckResult', ''], [physicalRow, 'CheckStatus', '']);
                 }
             });
+            if (resetLinkChecks.length) { instanceBookmarks.setSourceDataAtCell(resetLinkChecks, undefined, undefined, 'editor-derived'); }
+            syncBookmarksStateFromTable();
             Object.keys(touchedRows).forEach(function (rowKey) {
                 const rowIndex = Number(rowKey);
-                bookmarks[rowIndex] = getBookmarkVisualRowData(rowIndex);
                 updateBookmarkSearchIndexRow(rowIndex);
             });
             refreshBookmarkSearchAfterDataChange();
@@ -1331,12 +1665,14 @@ instance.render();
             const prop = instanceBookmarks.colToProp(selected[1]);
             if (prop !== 'LocalURL') { return; }
             const editor = instanceBookmarks.getActiveEditor && instanceBookmarks.getActiveEditor();
-            const inputValue = editor && editor.TEXTAREA ? editor.TEXTAREA.value : '';
+            if (!editor || !editor.isOpened() || !editor.TEXTAREA) { return; }
+            const inputValue = editor.TEXTAREA.value;
             if ((inputValue || '').trim() !== '') { return; }
+            if (editor.htEditor && editor.htEditor.getSelectedLast()) { return; }
             event.preventDefault();
             if (event.stopImmediatePropagation) { event.stopImmediatePropagation(); }
-            instanceBookmarks.setDataAtRowProp(selected[0], 'LocalURL', '', 'local-url-empty');
-            if (editor && editor.close) { editor.close(); }
+            editor.setValue('');
+            editor.finishEditing(false);
         });
 
         if (window.ResizeObserver) {
@@ -1354,4 +1690,4 @@ instance.render();
         updateSearchStatus();
         scheduleTableLayoutSync();
 
-    </script><script>document.addEventListener('keydown', function (e) { if (e.key === 'Escape') history.back(); });</script></body></html>
+    </script><script>document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing && !e.target.closest('input,textarea,select,[contenteditable="true"],.handsontable')) history.back(); });</script></body></html>

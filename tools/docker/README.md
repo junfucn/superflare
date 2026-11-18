@@ -234,7 +234,7 @@ docker compose -f ./tools/docker/docker-compose.yml up -d
 
 ## 读取宿主机端口信息
 
-如果希望 Docker 部署时读取宿主机端口信息并用于 `/settings/ports`，需要显式挂载宿主机 `/proc`，并设置 `FLARE_PORT_PROC_ROOT`：
+如果希望 Docker 部署时读取 Linux 宿主机端口信息并用于 `/settings/ports`，需要显式挂载宿主机 `/proc`，并设置 `FLARE_PORT_PROC_ROOT`。采集器读取该挂载下的 `1/net`，无需切换到 host 网络。若宿主机限制读取进程信息，仍会显示已读取的端口，并提示哪些所有者信息缺失：
 
 ```bash
 docker run -d \
@@ -255,6 +255,8 @@ docker compose \
   -f ./tools/docker/docker-compose.host-proc.yml \
   up -d
 ```
+
+编辑器会使用「设置 → 界面设置」中的 SuperFlare 内网访问地址来生成端口快捷链接；未填写时使用当前内网访问入口的主机名或 IP。通过公网地址访问时，请先填写内网地址，或手动填写每项书签的内网链接。生成的链接仍要求对应服务实际向浏览器所在网络开放。
 
 停止：
 
